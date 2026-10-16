@@ -1070,14 +1070,17 @@ export default {
     if (request.method === "OPTIONS") return json({ ok: true }, 200, request, env);
 
     if (url.pathname === "/health" && request.method === "GET") {
-      if (url.searchParams.get("check") === "bridge-live") {
+      const bridgeCheck = url.searchParams.get("check");
+      if (bridgeCheck === "bridge-live" || bridgeCheck === "bridge-join") {
         const auth = requireAuth(request, env);
         if (auth) return auth;
         if (!bridgeCredentialsConfigured(env))
           return errorResponse("gateway_bridge_not_configured", 503, request, env);
         try {
-          const bridgeResponse = await fetch(`${env.NEMO_AGENT_BRIDGE_URL.replace(/\/$/, "")}/health`, {
-            method: "GET",
+          const bridgeResponse = await fetch(
+            `${env.NEMO_AGENT_BRIDGE_URL.replace(/\/$/, "")}${bridgeCheck === "bridge-join" ? "/v1/node/join" : "/health"}`,
+            {
+            method: bridgeCheck === "bridge-join" ? "POST" : "GET",
             redirect: "manual",
             headers: {
               Accept: "application/json",
@@ -1085,7 +1088,18 @@ export default {
               "CF-Access-Client-Secret": env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
               "X-Nemo-Bridge-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
             },
-          });
+            ...(bridgeCheck === "bridge-join"
+              ? { body: JSON.stringify({ nodeName: "nemo-run-run_probe" }) }
+              : {}),
+            },
+          );
+          const bridgeText = await bridgeResponse.text();
+          let bridgeBody = null;
+          try {
+            bridgeBody = bridgeText ? JSON.parse(bridgeText) : null;
+          } catch {
+            bridgeBody = null;
+          }
           return json(
             {
               service: "nemo-control-plane",
@@ -1096,6 +1110,9 @@ export default {
                 locationPresent: Boolean(bridgeResponse.headers.get("location")),
                 cfRay: bridgeResponse.headers.get("cf-ray"),
                 server: bridgeResponse.headers.get("server"),
+                bodyKeys: bridgeBody && typeof bridgeBody === "object" ? Object.keys(bridgeBody) : [],
+                error: bridgeBody?.error || null,
+                detail: bridgeBody?.detail ? redact(bridgeBody.detail) : null,
               },
             },
             200,
