@@ -244,6 +244,7 @@
           "exitCode": { "type": ["integer", "null"] },
           "errorCode": { "type": ["string", "null"] },
           "errorMessage": { "type": ["string", "null"] },
+          "result": { "type": ["object", "null"], "additionalProperties": true },
           "createdAt": { "type": "string", "format": "date-time" },
           "updatedAt": { "type": "string", "format": "date-time" },
           "startedAt": { "type": ["string", "null"], "format": "date-time" },
@@ -322,12 +323,21 @@
           },
           "capabilities": {
             "type": "object",
-            "required": ["instaboxRead", "accountData", "mutations"],
+            "required": ["instaboxRead", "accountData", "persistence", "orchestration", "agentRunner", "mutations"],
             "properties": {
               "instaboxRead": {
                 "type": "boolean"
               },
               "accountData": {
+                "type": "boolean"
+              },
+              "persistence": {
+                "type": "boolean"
+              },
+              "orchestration": {
+                "type": "boolean"
+              },
+              "agentRunner": {
                 "type": "boolean"
               },
               "mutations": {
