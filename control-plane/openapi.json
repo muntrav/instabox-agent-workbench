@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Nemo Control Plane API",
-    "version": "1.0.0",
-    "description": "Read-only control-plane contract for the Nemo Instabox workbench."
+    "version": "2.0.0",
+    "description": "Control-plane contract for Nemo run orchestration, durable results, and Instabox lifecycle actions."
   },
   "servers": [
     {
@@ -12,6 +12,102 @@
   ],
   "security": [],
   "paths": {
+    "/api/runs": {
+      "get": {
+        "operationId": "listRuns",
+        "summary": "List persisted coding runs",
+        "security": [{ "NemoBearer": [] }],
+        "responses": {
+          "200": {
+            "description": "Persisted runs ordered newest first.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RunListResponse" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "operationId": "createRun",
+        "summary": "Queue an isolated coding run",
+        "security": [{ "NemoBearer": [] }],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "minLength": 12, "maxLength": 200 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateRunRequest" } } }
+        },
+        "responses": {
+          "202": {
+            "description": "Run accepted for background execution.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RunResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "503": { "$ref": "#/components/responses/RuntimeUnavailable" }
+        }
+      }
+    },
+    "/api/runs/{runId}": {
+      "get": {
+        "operationId": "getRun",
+        "summary": "Read one run",
+        "security": [{ "NemoBearer": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RunId" }],
+        "responses": {
+          "200": {
+            "description": "Run state.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RunResponse" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/runs/{runId}/logs": {
+      "get": {
+        "operationId": "getRunLogs",
+        "summary": "Read persisted run logs",
+        "security": [{ "NemoBearer": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RunId" }],
+        "responses": {
+          "200": {
+            "description": "Run log chunks.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LogsResponse" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/runs/{runId}/actions": {
+      "post": {
+        "operationId": "runMachineAction",
+        "summary": "Control or publish a run machine",
+        "security": [{ "NemoBearer": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RunId" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RunActionRequest" } } }
+        },
+        "responses": {
+          "202": {
+            "description": "Action accepted.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RunActionResponse" } } }
+          },
+          "200": {
+            "description": "Preview published.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RunActionResponse" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
     "/health": {
       "get": {
         "operationId": "getHealth",
@@ -61,6 +157,14 @@
     }
   },
   "components": {
+    "parameters": {
+      "RunId": {
+        "name": "runId",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "pattern": "^run_[A-Za-z0-9]+$" }
+      }
+    },
     "securitySchemes": {
       "NemoBearer": {
         "type": "http",
@@ -88,9 +192,108 @@
             }
           }
         }
+      },
+      "InvalidRequest": {
+        "description": "The request failed validation.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "RuntimeUnavailable": {
+        "description": "Persistence, Instabox write access, or the agent runtime is not configured.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "NotFound": {
+        "description": "The requested run does not exist.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "Conflict": {
+        "description": "The action is not valid for the current run state or needs confirmation.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
       }
     },
     "schemas": {
+      "CreateRunRequest": {
+        "type": "object",
+        "required": ["repositoryUrl", "task"],
+        "properties": {
+          "repositoryUrl": { "type": "string", "format": "uri", "pattern": "^https://github.com/" },
+          "ref": { "type": "string", "default": "main", "maxLength": 255 },
+          "task": { "type": "string", "minLength": 5, "maxLength": 4000 },
+          "templateId": { "type": "string", "default": "universal" },
+          "previewPort": { "type": ["integer", "null"], "minimum": 1024, "maximum": 65535 },
+          "retainMachine": { "type": "boolean", "default": false }
+        },
+        "additionalProperties": false
+      },
+      "Run": {
+        "type": "object",
+        "required": ["id", "status", "task", "templateId", "createdAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "repositoryUrl": { "type": "string" },
+          "repositoryName": { "type": "string" },
+          "ref": { "type": "string" },
+          "task": { "type": "string" },
+          "templateId": { "type": "string" },
+          "previewPort": { "type": ["integer", "null"] },
+          "previewUrl": { "type": ["string", "null"] },
+          "machineId": { "type": ["string", "null"] },
+          "commitSha": { "type": ["string", "null"] },
+          "status": { "type": "string" },
+          "agentStatus": { "type": "string" },
+          "testStatus": { "type": "string" },
+          "exitCode": { "type": ["integer", "null"] },
+          "errorCode": { "type": ["string", "null"] },
+          "errorMessage": { "type": ["string", "null"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "startedAt": { "type": ["string", "null"], "format": "date-time" },
+          "completedAt": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "RunResponse": {
+        "type": "object",
+        "required": ["run"],
+        "properties": { "run": { "$ref": "#/components/schemas/Run" } }
+      },
+      "RunListResponse": {
+        "type": "object",
+        "required": ["runs"],
+        "properties": { "runs": { "type": "array", "items": { "$ref": "#/components/schemas/Run" } } }
+      },
+      "RunLog": {
+        "type": "object",
+        "required": ["id", "stream", "chunk", "createdAt"],
+        "properties": {
+          "id": { "type": "integer" },
+          "stream": { "type": "string", "enum": ["stdout", "stderr"] },
+          "chunk": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "LogsResponse": {
+        "type": "object",
+        "required": ["logs"],
+        "properties": { "logs": { "type": "array", "items": { "$ref": "#/components/schemas/RunLog" } } }
+      },
+      "RunActionRequest": {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+          "action": { "type": "string", "enum": ["suspend", "resume", "stop", "delete", "cancel", "publish-preview"] },
+          "port": { "type": "integer", "minimum": 1024, "maximum": 65535 },
+          "name": { "type": "string", "maxLength": 120 }
+        }
+      },
+      "RunActionResponse": {
+        "type": "object",
+        "required": ["run"],
+        "properties": {
+          "accepted": { "type": "boolean" },
+          "action": { "type": "string" },
+          "previewUrl": { "type": ["string", "null"] },
+          "run": { "$ref": "#/components/schemas/Run" }
+        }
+      },
       "ErrorResponse": {
         "type": "object",
         "required": ["error", "message"],

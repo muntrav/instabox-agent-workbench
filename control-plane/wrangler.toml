@@ -4,3 +4,8 @@ compatibility_date = "2026-10-16"
 
 [vars]
 ALLOWED_ORIGINS = "https://nemo-agent-workbench.pages.dev,http://localhost:3000,http://127.0.0.1:3000"
+
+[[d1_databases]]
+binding = "NEMO_DB"
+database_name = "nemo-runs"
+database_id = "955b8067-7201-4f86-8993-12fb2e34e716"

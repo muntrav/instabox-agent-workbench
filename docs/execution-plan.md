@@ -60,4 +60,4 @@ Exit gate:
 
 ## Current status
 
-Phase 1 is the active implementation phase. The live UI is deployed at `https://nemo-agent-workbench.pages.dev` and the control plane is `https://nemo-control-plane.democow.workers.dev`. Phase 2 is intentionally blocked until Phase 1's authenticated read-only checks are verified.
+Phase 1 is complete. Phases 2 and 3 are implemented in the repository as the protected run API, D1 persistence, Instabox lifecycle adapter, command/log pipeline, preview publishing, and dashboard run controls. Activation of the Phase 3 agent path still requires the protected `NEMO_AGENT_COMMAND` runtime adapter; the Worker reports `agentRunner: false` until that secret is configured and the command is verified in the selected Instabox template.

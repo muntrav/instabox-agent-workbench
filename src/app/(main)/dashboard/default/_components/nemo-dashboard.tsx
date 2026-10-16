@@ -14,11 +14,14 @@ import {
   Clock3,
   ExternalLink,
   GitBranch,
+  LoaderCircle,
   type LucideIcon,
   Plus,
+  RefreshCw,
   Server,
   ShieldCheck,
   SquareTerminal,
+  Trash2,
   Workflow,
 } from "lucide-react";
 
@@ -47,12 +50,43 @@ type Overview = {
   usage?: { machines?: number; limits?: { maxMachines?: number } };
 };
 
+type Run = {
+  id: string;
+  repositoryName?: string;
+  ref?: string;
+  task: string;
+  templateId: string;
+  previewUrl?: string | null;
+  machineId?: string | null;
+  commitSha?: string | null;
+  status: string;
+  agentStatus: string;
+  testStatus: string;
+  errorMessage?: string | null;
+  createdAt: string;
+};
+
+type RunLog = { id: number; stream: string; chunk: string; createdAt: string };
+
 export function NemoDashboard() {
   const [connection, setConnection] = useState<"checking" | "online" | "offline">("checking");
   const [controlToken, setControlToken] = useState("");
   const [overview, setOverview] = useState<Overview | null>(null);
   const [sessionMessage, setSessionMessage] = useState("Account data requires a Nemo session token.");
   const [connecting, setConnecting] = useState(false);
+  const [capabilities, setCapabilities] = useState({ agentRunner: false, persistence: false, mutations: false });
+  const [runs, setRuns] = useState<Run[]>([]);
+  const [runLogs, setRunLogs] = useState<Record<string, RunLog[]>>({});
+  const [expandedRun, setExpandedRun] = useState<string | null>(null);
+  const [runSubmitting, setRunSubmitting] = useState(false);
+  const [runMessage, setRunMessage] = useState("Connect Nemo to queue a run.");
+  const [runForm, setRunForm] = useState({
+    repositoryUrl: "",
+    ref: "main",
+    task: "",
+    templateId: "universal",
+    previewPort: "",
+  });
   let connectionLabel = "Unavailable";
   if (connection === "checking") connectionLabel = "Checking…";
   if (connection === "online") connectionLabel = overview ? "Account data online" : "Read-only health online";
@@ -83,6 +117,7 @@ export function NemoDashboard() {
       sessionStorage.setItem("nemo-control-token", controlToken.trim());
       setOverview(body);
       setSessionMessage(`Connected to ${body.account?.name || "the Instabox account"}.`);
+      await loadRuns(controlToken.trim());
     } catch (error) {
       setOverview(null);
       setSessionMessage(error instanceof Error ? error.message : "The session could not be verified.");
@@ -99,9 +134,18 @@ export function NemoDashboard() {
         if (!response.ok) throw new Error("Control plane health check failed");
         return response.json();
       })
-      .then((body: { capabilities?: { instaboxRead?: boolean } }) => {
-        setConnection(body.capabilities?.instaboxRead ? "online" : "offline");
-      })
+      .then(
+        (body: {
+          capabilities?: { instaboxRead?: boolean; agentRunner?: boolean; persistence?: boolean; mutations?: boolean };
+        }) => {
+          setConnection(body.capabilities?.instaboxRead ? "online" : "offline");
+          setCapabilities({
+            agentRunner: Boolean(body.capabilities?.agentRunner),
+            persistence: Boolean(body.capabilities?.persistence),
+            mutations: Boolean(body.capabilities?.mutations),
+          });
+        },
+      )
       .catch(() => setConnection("offline"));
 
     return () => controller.abort();
@@ -116,12 +160,104 @@ export function NemoDashboard() {
         if (!response.ok) throw new Error(body.message || "The session could not be verified.");
         setOverview(body);
         setSessionMessage(`Connected to ${body.account?.name || "the Instabox account"}.`);
+        fetch(`${CONTROL_PLANE_ORIGIN}/api/runs`, { headers: { Authorization: `Bearer ${token}` } })
+          .then((runsResponse) => runsResponse.json())
+          .then((runsBody) => setRuns(runsBody.runs || []))
+          .catch(() => setRunMessage("Runs could not be loaded."));
       })
       .catch(() => {
         sessionStorage.removeItem("nemo-control-token");
         setSessionMessage("Account data requires a Nemo session token.");
       });
   }, []);
+
+  async function loadRuns(token: string) {
+    try {
+      const response = await fetch(`${CONTROL_PLANE_ORIGIN}/api/runs`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.message || "Runs could not be loaded.");
+      setRuns(body.runs || []);
+    } catch (error) {
+      setRunMessage(error instanceof Error ? error.message : "Runs could not be loaded.");
+    }
+  }
+
+  async function createRun(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const token = sessionStorage.getItem("nemo-control-token");
+    if (!token) {
+      setRunMessage("Connect Nemo before queueing a run.");
+      return;
+    }
+    setRunSubmitting(true);
+    setRunMessage("Validating the run and reserving an isolated machine…");
+    try {
+      const response = await fetch(`${CONTROL_PLANE_ORIGIN}/api/runs`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          repositoryUrl: runForm.repositoryUrl,
+          ref: runForm.ref,
+          task: runForm.task,
+          templateId: runForm.templateId,
+          previewPort: runForm.previewPort ? Number(runForm.previewPort) : null,
+          retainMachine: Boolean(runForm.previewPort),
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.message || "The run could not be queued.");
+      setRuns((current) => [body.run, ...current.filter((run) => run.id !== body.run.id)]);
+      setRunForm((current) => ({ ...current, task: "" }));
+      setRunMessage(`Run ${body.run.id} queued. The dashboard will refresh its status.`);
+    } catch (error) {
+      setRunMessage(error instanceof Error ? error.message : "The run could not be queued.");
+    } finally {
+      setRunSubmitting(false);
+    }
+  }
+
+  async function toggleRunLogs(runId: string) {
+    if (expandedRun === runId) {
+      setExpandedRun(null);
+      return;
+    }
+    setExpandedRun(runId);
+    if (runLogs[runId]) return;
+    const token = sessionStorage.getItem("nemo-control-token");
+    if (!token) return;
+    const response = await fetch(`${CONTROL_PLANE_ORIGIN}/api/runs/${runId}/logs`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await response.json();
+    if (response.ok) setRunLogs((current) => ({ ...current, [runId]: body.logs || [] }));
+  }
+
+  async function refreshRuns() {
+    const token = sessionStorage.getItem("nemo-control-token");
+    if (token) await loadRuns(token);
+  }
+
+  async function deleteRun(runId: string) {
+    if (!window.confirm("Delete the Instabox machine for this run? This cannot be undone.")) return;
+    const token = sessionStorage.getItem("nemo-control-token");
+    if (!token) return;
+    const response = await fetch(`${CONTROL_PLANE_ORIGIN}/api/runs/${runId}/actions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-Nemo-Confirm": "true",
+      },
+      body: JSON.stringify({ action: "delete" }),
+    });
+    if (response.ok) await loadRuns(token);
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -214,11 +350,80 @@ export function NemoDashboard() {
               </Link>
             </Button>
             <span className="text-muted-foreground text-xs">
-              {overview
-                ? "Live account data is connected; machine mutations remain disabled."
-                : "The read-only control plane is online; authenticated account data is the next gate."}
+              {capabilities.agentRunner
+                ? "Run orchestration is available; each task stays inside its Instabox machine."
+                : "Run orchestration is waiting for the protected agent runtime command."}
             </span>
           </div>
+          <form className="mt-6 grid gap-3 border-t pt-6" onSubmit={createRun}>
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
+              <label className="grid gap-1 text-sm">
+                GitHub repository
+                <input
+                  className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={(event) => setRunForm((current) => ({ ...current, repositoryUrl: event.target.value }))}
+                  placeholder="https://github.com/owner/repository"
+                  required
+                  type="url"
+                  value={runForm.repositoryUrl}
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                Branch or ref
+                <input
+                  className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={(event) => setRunForm((current) => ({ ...current, ref: event.target.value }))}
+                  required
+                  value={runForm.ref}
+                />
+              </label>
+            </div>
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px]">
+              <label className="grid gap-1 text-sm">
+                Task
+                <textarea
+                  className="min-h-24 rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={(event) => setRunForm((current) => ({ ...current, task: event.target.value }))}
+                  placeholder="Describe the coding task for the configured agent"
+                  required
+                  value={runForm.task}
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                Machine template
+                <select
+                  className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={(event) => setRunForm((current) => ({ ...current, templateId: event.target.value }))}
+                  value={runForm.templateId}
+                >
+                  {visibleTemplates.map((template) => (
+                    <option key={template.name} value={template.name}>
+                      {template.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1 text-sm">
+                Preview port <span className="text-muted-foreground text-xs">optional</span>
+                <input
+                  className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  max="65535"
+                  min="1024"
+                  onChange={(event) => setRunForm((current) => ({ ...current, previewPort: event.target.value }))}
+                  placeholder="3000"
+                  type="number"
+                  value={runForm.previewPort}
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button disabled={!overview || !capabilities.agentRunner || runSubmitting} type="submit">
+                {runSubmitting ? <LoaderCircle className="animate-spin" /> : <CirclePlay />}
+                Queue isolated run
+              </Button>
+              <p className="text-muted-foreground text-xs">{runMessage}</p>
+            </div>
+          </form>
         </CardContent>
       </Card>
 
@@ -233,7 +438,14 @@ export function NemoDashboard() {
               : "Session required to load live data"
           }
         />
-        <SummaryCard icon={CirclePlay} label="Running tasks" value="—" detail="Runs will appear here" />
+        <SummaryCard
+          icon={CirclePlay}
+          label="Running tasks"
+          value={runs
+            .filter((run) => !["completed", "failed", "cancelled", "cleaned"].includes(run.status))
+            .length.toString()}
+          detail={capabilities.persistence ? "Persisted in Nemo" : "Persistence unavailable"}
+        />
         <SummaryCard icon={GitBranch} label="Repositories" value="—" detail="GitHub integration pending" />
         <SummaryCard icon={Activity} label="Latest result" value="—" detail="No runs yet" />
       </section>
@@ -286,11 +498,73 @@ export function NemoDashboard() {
             <CardDescription>Task history stays tied to its GitHub repository and commit.</CardDescription>
           </CardHeader>
           <CardContent>
-            <EmptyState
-              icon={CircleDashed}
-              title="No runs yet"
-              description="Launch a task to see its status, logs, tests, and preview URL."
-            />
+            {runs.length ? (
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <Button onClick={refreshRuns} size="sm" variant="ghost">
+                    <RefreshCw />
+                    Refresh
+                  </Button>
+                </div>
+                {runs.slice(0, 8).map((run) => (
+                  <div className="rounded-lg border p-3" key={run.id}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm">{run.repositoryName || "GitHub repository"}</p>
+                        <p className="mt-1 text-muted-foreground text-xs">{run.task}</p>
+                      </div>
+                      <Badge variant={run.status === "completed" ? "secondary" : "outline"}>{run.status}</Badge>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
+                      <span>{run.id}</span>
+                      <span>·</span>
+                      <span>{run.ref}</span>
+                      {run.commitSha ? (
+                        <>
+                          <span>·</span>
+                          <span>{run.commitSha.slice(0, 7)}</span>
+                        </>
+                      ) : null}
+                      {run.previewUrl ? (
+                        <a
+                          className="font-medium text-primary underline-offset-4 hover:underline"
+                          href={run.previewUrl}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          Preview
+                        </a>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button onClick={() => toggleRunLogs(run.id)} size="sm" variant="outline">
+                        <SquareTerminal />
+                        {expandedRun === run.id ? "Hide logs" : "Logs"}
+                      </Button>
+                      {run.machineId ? (
+                        <Button onClick={() => deleteRun(run.id)} size="sm" variant="ghost">
+                          <Trash2 />
+                          Delete machine
+                        </Button>
+                      ) : null}
+                    </div>
+                    {run.errorMessage ? <p className="mt-2 text-destructive text-xs">{run.errorMessage}</p> : null}
+                    {expandedRun === run.id ? (
+                      <pre className="mt-3 max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs">
+                        {(runLogs[run.id] || []).map((log) => `[${log.stream}] ${log.chunk}`).join("\n") ||
+                          "Loading logs…"}
+                      </pre>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                icon={CircleDashed}
+                title="No runs yet"
+                description="Queue a task to see its status, logs, tests, commit, and preview URL."
+              />
+            )}
           </CardContent>
         </Card>
       </div>

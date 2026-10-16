@@ -39,7 +39,7 @@ npm run build
 
 The GitHub `main` branch is connected to the private Cloudflare Pages project `nemo-agent-workbench`.
 The connected Pages URL is `https://nemo-agent-workbench.pages.dev`.
-This first milestone is a frontend-only shell; Instabox API actions remain behind a protected control-plane boundary.
+The frontend remains a static Pages artifact; dynamic orchestration runs through the protected control-plane Worker.
 
 ## Runtime boundary
 
@@ -53,16 +53,16 @@ The separate `control-plane/` Worker is deployed as `nemo-control-plane.democow.
 - `GET /health` is a public capability check.
 - `GET /api/overview` requires `Authorization: Bearer <NEMO_CONTROL_TOKEN>` and reads Instabox with the protected
   `INSTABOX_API_KEY` Worker secret.
-- Machine mutations are intentionally disabled in this milestone.
+- Machine mutations require the Nemo session token and explicit action confirmation.
 - The frontend stays static on Pages; the Worker is the only provider integration boundary.
 
 ## Execution plan
 
 The complete delivery plan is documented in [`docs/execution-plan.md`](./docs/execution-plan.md):
 
-1. **Foundation and read-only connectivity** — current phase; contract, protected overview, live account status, and deployment proof.
-2. **Controlled run orchestration** — repository/task selection, isolated machine creation, lifecycle controls, and idempotency.
-3. **Agent results and production workflow** — agent execution, logs, tests, previews, persistence, GitHub status, and release gates.
+1. **Foundation and read-only connectivity** — complete.
+2. **Controlled run orchestration** — implemented: repository/task selection, isolated machine creation, lifecycle controls, durable run state, and idempotency.
+3. **Agent results and production workflow** — implemented: command adapter, redacted logs, tests, commit provenance, previews, cleanup, and release-boundary documentation. Agent activation requires `NEMO_AGENT_COMMAND`.
 
 Phase 1 contract validation runs with:
 
