@@ -91,6 +91,7 @@ function redact(value) {
   return String(value || "")
     .replace(/ibk_[A-Za-z0-9_-]+/g, "ibk_[redacted]")
     .replace(/(ghp_|github_pat_|sk-|cf_)[A-Za-z0-9_-]+/g, "$1[redacted]")
+    .replace(/https:\/\/nemo-gateway\.nywezalabs\.com\/j\/[A-Za-z0-9_-]+/g, "https://nemo-gateway.nywezalabs.com/j/[redacted]")
     .replace(/Bearer\s+[A-Za-z0-9._~-]+/gi, "Bearer [redacted]");
 }
 
@@ -475,7 +476,8 @@ async function provisionNode(request, env) {
       },
     });
     if (commandFailed(command)) {
-      throw Object.assign(new Error("The Instabox node client could not connect"), {
+      const detail = redact(command?.stderr || command?.stdout || "").trim().slice(-600);
+      throw Object.assign(new Error(detail || "The Instabox node client could not connect"), {
         code: "node_connect_failed",
         status: 502,
       });
