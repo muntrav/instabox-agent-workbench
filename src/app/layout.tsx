@@ -13,7 +13,7 @@ import { PreferencesStoreProvider } from "@/stores/preferences/preferences-provi
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://studio-admin.arhamkhnz.com"),
+  metadataBase: new URL("http://localhost:3000"),
   title: APP_CONFIG.meta.title,
   description: APP_CONFIG.meta.description,
   twitter: {

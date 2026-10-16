@@ -63,4 +63,4 @@ Allow: /
 Disallow: /api/
 Content-Signal: ai-train=yes, search=yes, ai-input=yes
 
-Sitemap: https://studio-admin.arhamkhnz.com/sitemap.xml
+Sitemap: https://nemo-agent-workbench.pages.dev/sitemap.xml
