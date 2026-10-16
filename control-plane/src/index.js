@@ -1,7 +1,7 @@
 import { WorkflowEntrypoint } from "cloudflare:workers";
 
 const INSTABOX_ORIGIN = "https://api.instabox.sh";
-const VERSION = "0.6.0";
+const VERSION = "0.6.1";
 const MIN_CONTROL_TOKEN_LENGTH = 6;
 const MAX_RUNS_PAGE = 50;
 const WORKSPACE = "/data/home/workspace";
@@ -393,7 +393,28 @@ async function machineCommand(env, runId, machine, cmd, timeoutSeconds = 600, op
   });
   await appendLog(env, runId, "stdout", result?.stdout || "");
   await appendLog(env, runId, "stderr", result?.stderr || "");
+  if (!options.allowFailure && commandFailed(result)) {
+    const exitCode = Number(result?.exitCode ?? result?.code ?? result?.statusCode);
+    const detail = redact(result?.stderr || result?.stdout || "").trim().slice(-1200);
+    const label = options.label || "Instabox command";
+    throw Object.assign(new Error(detail ? `${label} failed: ${detail}` : `${label} failed`), {
+      code: options.errorCode || "machine_command_failed",
+      status: 422,
+      exitCode: Number.isFinite(exitCode) ? exitCode : 1,
+    });
+  }
   return result || {};
+}
+
+function dependencyInstallCommand() {
+  return [
+    "set -eu",
+    `cd ${shellQuote(WORKSPACE)}`,
+    "if [ -f package-lock.json ]; then if npm ci --no-audit --no-fund; then echo 'Nemo dependency install: npm ci succeeded.'; else echo 'Nemo dependency install: npm ci failed; retrying npm install for a stale lockfile.' >&2; npm install --no-audit --no-fund; fi",
+    "elif [ -f package.json ]; then npm install --no-audit --no-fund",
+    "else echo 'No Node package manifest; dependency install skipped.'",
+    "fi",
+  ].join("; ");
 }
 
 async function pairMachineNode(env, machineIdValue, nodeName, runId = null) {
@@ -735,7 +756,11 @@ async function executeRun(runId, env) {
       machine,
       `set -eu; rm -rf ${shellQuote(WORKSPACE)}; git clone --depth 1 --branch ${shellQuote(run.ref_name)} ${cloneSource} ${shellQuote(WORKSPACE)}; git -C ${shellQuote(WORKSPACE)} rev-parse HEAD`,
       600,
-      env.GITHUB_TOKEN ? { envs: { GITHUB_TOKEN: env.GITHUB_TOKEN } } : {},
+      {
+        ...(env.GITHUB_TOKEN ? { envs: { GITHUB_TOKEN: env.GITHUB_TOKEN } } : {}),
+        label: "Repository checkout",
+        errorCode: "repository_checkout_failed",
+      },
     );
     const commitSha = String(clone.stdout || "")
       .trim()
@@ -753,8 +778,9 @@ async function executeRun(runId, env) {
       env,
       runId,
       machine,
-      `set -eu; cd ${shellQuote(WORKSPACE)}; if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; else echo 'No Node package manifest; dependency install skipped.'; fi`,
+      dependencyInstallCommand(),
       600,
+      { label: "Dependency installation", errorCode: "dependencies_failed" },
     );
     await appendEvent(env, runId, "dependencies_ready");
 
@@ -763,19 +789,25 @@ async function executeRun(runId, env) {
     await updateRun(env, runId, { agent_status: "succeeded", status: "testing", updated_at: now() });
     await appendEvent(env, runId, "agent_completed");
 
-    const tests = await machineCommand(env, runId, machine, testCommand());
+    const tests = await machineCommand(env, runId, machine, testCommand(), 600, {
+      allowFailure: true,
+      label: "Project validation",
+      errorCode: "tests_failed",
+    });
     const testExitCode = Number(tests.exitCode || 0);
     await updateRun(env, runId, {
       test_status: testExitCode === 0 ? "succeeded" : "failed",
       exit_code: testExitCode,
       updated_at: now(),
     });
-    if (testExitCode !== 0)
-      throw Object.assign(new Error("Project tests failed"), {
+    if (testExitCode !== 0) {
+      const detail = redact(tests?.stderr || tests?.stdout || "").trim().slice(-1200);
+      throw Object.assign(new Error(detail ? `Project validation failed: ${detail}` : "Project validation failed"), {
         code: "tests_failed",
         status: 422,
         exitCode: testExitCode,
       });
+    }
     await appendEvent(env, runId, "tests_completed", { exitCode: testExitCode });
 
     const latest = await findRun(env, runId);
@@ -834,6 +866,7 @@ async function executeRun(runId, env) {
       try {
         await deleteMachine(env, machine, `nemo-failed-cleanup-${runId}`);
         await appendEvent(env, runId, "machine_cleaned_after_failure");
+        if (!run?.retain_machine) await updateRun(env, runId, { node_status: "removed", updated_at: now() });
       } catch {
         await appendEvent(env, runId, "machine_cleanup_failed");
       }

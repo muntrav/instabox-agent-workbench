@@ -10,6 +10,8 @@ separate from the static Cloudflare Pages frontend.
 - The Worker reads `INSTABOX_API_KEY` and never returns it to the browser.
 - `GET/POST /api/runs` queues and reads durable runs.
 - `GET /api/runs/:id/logs` returns redacted persisted command output.
+- Dependency installation is fail-fast: a stale npm lockfile gets one explicit `npm install` fallback; if that also fails, the run ends as `dependencies_failed` with the provider command output preserved in logs.
+- Repository checkout and validation commands fail fast with distinct error codes and redacted stderr instead of being reported as generic test failures.
 - `POST /api/runs/:id/actions` controls a run machine or publishes a preview URL.
 - Each run pairs its own Instabox machine as `nemo-run-<runId>` and binds the OpenClaw agent session to that node.
 - Resource-creating and destructive actions use Instabox idempotency keys; deletes require `X-Nemo-Confirm: true`.
@@ -34,4 +36,7 @@ Nemo session boundary. The D1 binding `NEMO_DB` stores run metadata, events, and
 redacted logs. Project workloads execute only in Instabox machines. The Worker
 never receives provider credentials: it calls the bridge, which invokes the
 existing Gateway provider configuration. Each run session is explicitly bound
-to its matching run node; the VPS cannot become a project execution target. Long-running runs are started through a durable Cloudflare Workflow rather than a short-lived Worker `waitUntil` continuation, so setup, checkout, agent execution, tests, and cleanup can complete beyond the request lifecycle.
+to its matching run node; the VPS cannot become a project execution target.
+Long-running runs are started through a Cloudflare Workflow rather than a short-lived
+Worker `waitUntil` continuation, so machine setup, checkout, agent execution, tests,
+and cleanup can complete beyond the request lifecycle.
