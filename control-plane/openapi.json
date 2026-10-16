@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Nemo Control Plane API",
-    "version": "2.1.0",
+    "version": "2.2.0",
     "description": "Control-plane contract for Nemo run orchestration, per-run Instabox nodes, durable results, and lifecycle actions."
   },
   "servers": [
@@ -364,6 +364,7 @@
               "agentRunner",
               "gatewayBridge",
               "perRunNodeBinding",
+              "durableRunExecution",
               "mutations"
             ],
             "properties": {
@@ -386,6 +387,9 @@
                 "type": "boolean"
               },
               "perRunNodeBinding": {
+                "type": "boolean"
+              },
+              "durableRunExecution": {
                 "type": "boolean"
               },
               "mutations": {

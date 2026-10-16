@@ -23,7 +23,7 @@ const requiredOperations = [
 ];
 
 if (contract.openapi !== "3.1.0") throw new Error("Expected an OpenAPI 3.1 contract.");
-if (contract.info?.version !== "2.1.0") throw new Error("Expected control-plane contract version 2.1.0.");
+if (contract.info?.version !== "2.2.0") throw new Error("Expected control-plane contract version 2.2.0.");
 
 for (const path of requiredPaths) {
   if (!contract.paths?.[path]) throw new Error(`Missing path ${path}.`);

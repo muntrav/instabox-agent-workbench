@@ -34,4 +34,4 @@ Nemo session boundary. The D1 binding `NEMO_DB` stores run metadata, events, and
 redacted logs. Project workloads execute only in Instabox machines. The Worker
 never receives provider credentials: it calls the bridge, which invokes the
 existing Gateway provider configuration. Each run session is explicitly bound
-to its matching run node; the VPS cannot become a project execution target.
+to its matching run node; the VPS cannot become a project execution target. Long-running runs are started through a durable Cloudflare Workflow rather than a short-lived Worker `waitUntil` continuation, so setup, checkout, agent execution, tests, and cleanup can complete beyond the request lifecycle.
