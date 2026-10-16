@@ -203,22 +203,24 @@ async function nodeJoin(req, res) {
   }
   if (!token) return json(res, 503, { error: "gateway_auth_unavailable" });
   const result = await runCli([
-    "qr",
+    "devices",
+    "join-code",
     "--json",
-    "--setup-code-only",
     "--url",
-    "wss://nemo-gateway.nywezalabs.com",
-    "--public-url",
-    "wss://nemo-gateway.nywezalabs.com",
+    "ws://127.0.0.1:18789",
     "--token",
     token,
   ]);
   if (!result.ok) return json(res, 502, { error: "join_code_failed", detail: redact(result.stderr).slice(-400) });
   try {
     const body = JSON.parse(result.stdout.trim());
-    if (typeof body.setupCode !== "string" || body.setupCode.length < 1)
+    if (typeof body.joinUrl !== "string" || body.joinUrl.length < 1)
       return json(res, 502, { error: "join_code_invalid" });
-    return json(res, 200, { joinUrl: `oc-pair://${body.setupCode}`, nodeName });
+    const joinUrl = new URL(body.joinUrl);
+    joinUrl.protocol = "https:";
+    joinUrl.hostname = "nemo-gateway.nywezalabs.com";
+    joinUrl.port = "";
+    return json(res, 200, { joinUrl: joinUrl.toString(), nodeName });
   } catch {
     return json(res, 502, { error: "join_code_invalid" });
   }
