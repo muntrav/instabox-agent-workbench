@@ -218,7 +218,7 @@ async function nodeJoin(req, res) {
 async function nodeApprove(req, res) {
   const body = JSON.parse(await readBody(req));
   const name = typeof body?.nodeName === "string" ? body.nodeName : "Nemo Instabox";
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
     const status = await runCli(["nodes", "status", "--json"]);
     if (status.ok) {
       try {
