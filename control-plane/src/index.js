@@ -658,9 +658,9 @@ function testCommand() {
   return [
     "set -eu",
     "cd /data/home/workspace",
-    "if [ -f package.json ] && node -e \"process.exit(require('./package.json').scripts?.test ? 0 : 1)\"; then npm test -- --runInBand;",
-    "elif [ -f pyproject.toml ]; then pytest -q;",
-    "elif [ -f Cargo.toml ]; then cargo test;",
+    "if [ -f package.json ] && node -e \"process.exit(require('./package.json').scripts?.test ? 0 : 1)\"; then npm test -- --runInBand",
+    "elif [ -f pyproject.toml ]; then pytest -q",
+    "elif [ -f Cargo.toml ]; then cargo test",
     "else echo 'No recognized test command; recording a skipped test.'; fi",
   ].join("; ");
 }
