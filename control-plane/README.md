@@ -17,7 +17,7 @@ Worker name: `nemo-control-plane`
 Required protected Worker secrets:
 
 - `INSTABOX_API_KEY`: the Instabox key, restricted to read access where possible.
-- `NEMO_CONTROL_TOKEN`: a separate, long random token used by an authenticated Nemo client. Do not reuse the Instabox key.
+- `NEMO_CONTROL_TOKEN`: a separate password longer than five characters used by an authenticated Nemo client. Do not reuse the Instabox key.
 
 The Worker is deployed independently from Pages. The frontend may call `/health`
 without credentials, but account data stays unavailable until a proper Nemo
