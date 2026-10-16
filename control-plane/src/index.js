@@ -463,7 +463,7 @@ async function provisionNode(request, env) {
       body: {
         cmd: [
           "set -eu",
-          "NODE_VERSION=24.16.0; NODE_DIR=\"$HOME/.local/node-v$NODE_VERSION\"; if [ ! -x \"$NODE_DIR/bin/node\" ]; then mkdir -p \"$HOME/.local\"; curl -fsSL \"https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz\" | tar -xJ -C \"$HOME/.local\"; fi; export PATH=\"$NODE_DIR/bin:$HOME/.local/bin:$PATH\"",
+          "NODE_VERSION=24.16.0; NODE_DIR=\"$HOME/.local/node-v$NODE_VERSION-linux-x64\"; if [ ! -x \"$NODE_DIR/bin/node\" ]; then mkdir -p \"$HOME/.local\"; curl -fsSL \"https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz\" | tar -xJ -C \"$HOME/.local\"; fi; export PATH=\"$NODE_DIR/bin:$HOME/.local/bin:$PATH\"",
           "npm install --prefix \"$HOME/.local\" --no-save openclaw@2026.9.3; OPENCLAW_BIN=\"$HOME/.local/bin/openclaw\"",
           "\"$OPENCLAW_BIN\" connect \"$NEMO_JOIN_URL\" --service --display-name \"$NEMO_NODE_NAME\"",
         ].join("; "),
