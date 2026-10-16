@@ -2,7 +2,7 @@ import { Suspense } from "react";
 
 import type { Metadata } from "next";
 
-import { NemoChats } from "./_components/nemo-chats";
+import { RunChatWorkspace } from "@/components/vercel-chatbot/run-chat-workspace";
 
 export const metadata: Metadata = {
   title: "Chats · Nemo",
@@ -18,7 +18,8 @@ export default function Page() {
         </div>
       }
     >
-      <NemoChats />
+      <RunChatWorkspace />
     </Suspense>
   );
 }
+
