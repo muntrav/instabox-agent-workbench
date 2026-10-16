@@ -1,14 +1,12 @@
 import type { ReactNode } from "react";
 
-import { cookies } from "next/headers";
-
 import { cn } from "cn";
 
 import { AppSidebar } from "@/app/(main)/dashboard/_components/sidebar/app-sidebar";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { users } from "@/data/users";
-import { getPreference } from "@/server/server-actions";
+import { PREFERENCE_DEFAULTS } from "@/lib/preferences/preferences-config";
 
 import { AccountSwitcher } from "./_components/header/account-switcher";
 import { GitHubRepositoriesMenu } from "./_components/header/github-repositories-menu";
@@ -16,24 +14,17 @@ import { LayoutControls } from "./_components/header/layout-controls";
 import { SearchDialog } from "./_components/header/search-dialog";
 import { ThemeSwitcher } from "./_components/header/theme-switcher";
 
-export default async function Layout({ children }: Readonly<{ children: ReactNode }>) {
-  const cookieStore = await cookies();
-  const defaultOpen = cookieStore.get("sidebar_state")?.value !== "false";
-  const [variant, collapsible] = await Promise.all([
-    getPreference("sidebar_variant"),
-    getPreference("sidebar_collapsible"),
-  ]);
-
+export default function Layout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <SidebarProvider
-      defaultOpen={defaultOpen}
+      defaultOpen
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 68)",
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant={variant} collapsible={collapsible} />
+      <AppSidebar variant={PREFERENCE_DEFAULTS.sidebar_variant} collapsible={PREFERENCE_DEFAULTS.sidebar_collapsible} />
       <SidebarInset
         className={cn(
           "[html[data-content-layout=centered]_&>*]:mx-auto",

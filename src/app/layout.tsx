@@ -13,7 +13,7 @@ import { PreferencesStoreProvider } from "@/stores/preferences/preferences-provi
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("http://localhost:3000"),
+  metadataBase: new URL("https://nemo-agent-workbench.pages.dev"),
   title: APP_CONFIG.meta.title,
   description: APP_CONFIG.meta.description,
   twitter: {

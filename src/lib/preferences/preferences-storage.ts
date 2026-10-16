@@ -1,7 +1,5 @@
 "use client";
 
-import { setValueToCookie } from "@/server/server-actions";
-
 import { setClientCookie } from "../cookie.client";
 import { setLocalStorageValue } from "../local-storage.client";
 import {
@@ -21,7 +19,7 @@ async function persistByMode(mode: PreferencePersistence, key: string, value: st
       return;
 
     case "server-cookie":
-      await setValueToCookie(key, value);
+      setClientCookie(key, value);
       return;
 
     case "localStorage":
