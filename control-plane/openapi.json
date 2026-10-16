@@ -323,7 +323,15 @@
           },
           "capabilities": {
             "type": "object",
-            "required": ["instaboxRead", "accountData", "persistence", "orchestration", "agentRunner", "mutations"],
+            "required": [
+              "instaboxRead",
+              "accountData",
+              "persistence",
+              "orchestration",
+              "agentRunner",
+              "gatewayBridge",
+              "mutations"
+            ],
             "properties": {
               "instaboxRead": {
                 "type": "boolean"
@@ -338,6 +346,9 @@
                 "type": "boolean"
               },
               "agentRunner": {
+                "type": "boolean"
+              },
+              "gatewayBridge": {
                 "type": "boolean"
               },
               "mutations": {

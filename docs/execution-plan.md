@@ -61,3 +61,14 @@ Exit gate:
 ## Current status
 
 Phase 1 is complete. Phases 2 and 3 are implemented in the repository as the protected run API, D1 persistence, Instabox lifecycle adapter, command/log pipeline, preview publishing, and dashboard run controls. Activation of the Phase 3 agent path still requires the protected `NEMO_AGENT_COMMAND` runtime adapter; the Worker reports `agentRunner: false` until that secret is configured and the command is verified in the selected Instabox template.
+
+## Gateway reuse activation
+
+The Phase 3 runtime now uses a separate Cloudflare Access-protected VPS bridge.
+The bridge invokes the existing OpenClaw Gateway provider configuration through
+the local Gateway-routed CLI path; it never runs project commands on the VPS.
+The restricted `nemo` agent may use only `node_exec`, and the target node must
+be an explicitly paired Instabox node named by `NEMO_INSTABOX_NODE_NAME`.
+Provider credentials remain on the Gateway. The bridge route and agent policy
+are deployed; the remaining activation gate is pairing and verifying the
+Instabox node, then setting the protected Worker node-name binding.

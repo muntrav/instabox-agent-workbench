@@ -62,7 +62,7 @@ The complete delivery plan is documented in [`docs/execution-plan.md`](./docs/ex
 
 1. **Foundation and read-only connectivity** — complete.
 2. **Controlled run orchestration** — implemented: repository/task selection, isolated machine creation, lifecycle controls, durable run state, and idempotency.
-3. **Agent results and production workflow** — implemented: command adapter, redacted logs, tests, commit provenance, previews, cleanup, and release-boundary documentation. Agent activation requires `NEMO_AGENT_COMMAND`.
+3. **Agent results and production workflow** — implemented: durable runs, redacted logs, tests, commit provenance, previews, cleanup, and release-boundary documentation. The agent path reuses the existing OpenClaw Gateway through the protected VPS bridge; project commands execute only on a paired Instabox node.
 
 Phase 1 contract validation runs with:
 

@@ -22,9 +22,15 @@ Required protected Worker secrets:
 - `INSTABOX_API_KEY`: the Instabox key, restricted to read access where possible.
 - `NEMO_CONTROL_TOKEN`: a separate password longer than five characters used by an authenticated Nemo client. Do not reuse the Instabox key.
 - `GITHUB_TOKEN`: optional protected GitHub token for private repositories; public repositories work without it.
-- `NEMO_AGENT_COMMAND`: required protected command template for Phase 3. It must use `{task}` as the task argument and may use `{workspace}` and `{repository}`.
+- `NEMO_AGENT_BRIDGE_URL`: HTTPS URL for the separate Cloudflare Access-protected VPS bridge.
+- `NEMO_BRIDGE_ACCESS_CLIENT_ID`: Cloudflare Access service-token client ID.
+- `NEMO_BRIDGE_ACCESS_CLIENT_SECRET`: Cloudflare Access service-token client secret.
+- `NEMO_INSTABOX_NODE_NAME`: the explicitly paired Instabox OpenClaw node name.
 
 The Worker is deployed independently from Pages. The frontend may call `/health`
 without credentials, but all account, run, log, and machine actions require the
 Nemo session boundary. The D1 binding `NEMO_DB` stores run metadata, events, and
-redacted logs. Project workloads execute only in Instabox machines.
+redacted logs. Project workloads execute only in Instabox machines. The Worker
+never receives provider credentials: it calls the bridge, which invokes the
+existing Gateway provider configuration and is restricted to the named
+Instabox node.

@@ -1,5 +1,5 @@
 const INSTABOX_ORIGIN = "https://api.instabox.sh";
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 const MIN_CONTROL_TOKEN_LENGTH = 6;
 const MAX_RUNS_PAGE = 50;
 const WORKSPACE = "/data/home/workspace";
@@ -96,6 +96,19 @@ function redact(value) {
 
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+function agentBridgeConfigured(env) {
+  return Boolean(
+    typeof env.NEMO_AGENT_BRIDGE_URL === "string" &&
+      env.NEMO_AGENT_BRIDGE_URL.startsWith("https://") &&
+      typeof env.NEMO_BRIDGE_ACCESS_CLIENT_ID === "string" &&
+      env.NEMO_BRIDGE_ACCESS_CLIENT_ID.length > 10 &&
+      typeof env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET === "string" &&
+      env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET.length > 10 &&
+      typeof env.NEMO_INSTABOX_NODE_NAME === "string" &&
+      env.NEMO_INSTABOX_NODE_NAME.length > 0,
+  );
 }
 
 function githubRepository(value) {
@@ -350,15 +363,44 @@ async function machineCommand(env, runId, machine, cmd, timeoutSeconds = 600, op
   return result || {};
 }
 
-function agentCommand(env, run) {
-  const template = env.NEMO_AGENT_COMMAND;
-  if (typeof template !== "string" || !template.trim()) return null;
-  const taskArgument = shellQuote(run.task);
-  const rendered = template
-    .replaceAll("{task}", taskArgument)
-    .replaceAll("{workspace}", shellQuote(WORKSPACE))
-    .replaceAll("{repository}", shellQuote(run.repository_url));
-  return rendered.includes(taskArgument) ? rendered : `${rendered} ${taskArgument}`;
+async function runRemoteAgent(env, run) {
+  if (!agentBridgeConfigured(env)) {
+    throw Object.assign(new Error("The OpenClaw Gateway bridge is not configured"), {
+      code: "agent_bridge_not_configured",
+      status: 503,
+    });
+  }
+  const response = await fetch(`${env.NEMO_AGENT_BRIDGE_URL.replace(/\/$/, "")}/v1/agent/turn`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "content-type": "application/json",
+      "CF-Access-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
+      "CF-Access-Client-Secret": env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
+    },
+    body: JSON.stringify({
+      runId: run.id,
+      nodeName: env.NEMO_INSTABOX_NODE_NAME,
+      workspace: WORKSPACE,
+      repositoryUrl: run.repository_url,
+      ref: run.ref_name,
+      task: run.task,
+    }),
+  });
+  const text = await response.text();
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+  if (!response.ok || !body?.result) {
+    throw Object.assign(new Error(body?.message || body?.detail || "The OpenClaw agent bridge failed"), {
+      code: body?.error || "agent_bridge_failed",
+      status: response.status || 502,
+    });
+  }
+  return body;
 }
 
 function testCommand() {
@@ -432,20 +474,8 @@ async function executeRun(runId, env) {
     });
     await appendEvent(env, runId, "repository_ready", { commitSha });
 
-    const command = agentCommand(env, run);
-    if (!command)
-      throw Object.assign(new Error("NEMO_AGENT_COMMAND is not configured"), {
-        code: "agent_runtime_not_configured",
-        status: 503,
-      });
-    const agent = await machineCommand(env, runId, machine, `set -eu; cd ${shellQuote(WORKSPACE)}; ${command}`);
-    if (Number(agent.exitCode || 0) !== 0) {
-      throw Object.assign(new Error("Agent command failed"), {
-        code: "agent_failed",
-        status: 502,
-        exitCode: agent.exitCode || 1,
-      });
-    }
+    const agent = await runRemoteAgent(env, run);
+    await appendLog(env, runId, "agent", agent.result);
     await updateRun(env, runId, { agent_status: "succeeded", status: "testing", updated_at: now() });
     await appendEvent(env, runId, "agent_completed");
 
@@ -498,7 +528,13 @@ async function executeRun(runId, env) {
     const message = redact(error.message || "The run failed.");
     await updateRun(env, runId, {
       status: "failed",
-      agent_status: code === "agent_failed" || code === "agent_runtime_not_configured" ? "failed" : undefined,
+      agent_status:
+        code === "agent_failed" ||
+        code === "agent_runtime_not_configured" ||
+        code === "agent_bridge_not_configured" ||
+        code === "agent_bridge_failed"
+          ? "failed"
+          : undefined,
       test_status: code === "tests_failed" ? "failed" : undefined,
       exit_code: error.exitCode ?? null,
       error_code: code,
@@ -557,9 +593,9 @@ async function createRun(request, env, ctx) {
     return errorResponse("instabox_key_not_configured", 503, request, env, {
       message: "Instabox write access is not configured.",
     });
-  if (!env.NEMO_AGENT_COMMAND) {
-    return errorResponse("agent_runtime_not_configured", 503, request, env, {
-      message: "Configure the protected NEMO_AGENT_COMMAND Worker secret before launching runs.",
+  if (!agentBridgeConfigured(env)) {
+    return errorResponse("agent_bridge_not_configured", 503, request, env, {
+      message: "The OpenClaw Gateway bridge and Instabox node are not configured.",
     });
   }
 
@@ -739,7 +775,8 @@ export default {
             accountData: authConfigured(env),
             persistence: Boolean(env.NEMO_DB),
             orchestration: Boolean(env.NEMO_DB && env.INSTABOX_API_KEY),
-            agentRunner: Boolean(env.NEMO_AGENT_COMMAND),
+            agentRunner: agentBridgeConfigured(env),
+            gatewayBridge: agentBridgeConfigured(env),
             mutations: Boolean(env.NEMO_DB && env.INSTABOX_API_KEY),
           },
         },

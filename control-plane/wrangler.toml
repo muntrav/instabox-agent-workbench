@@ -4,6 +4,7 @@ compatibility_date = "2026-10-16"
 
 [vars]
 ALLOWED_ORIGINS = "https://nemo-agent-workbench.pages.dev,http://localhost:3000,http://127.0.0.1:3000"
+NEMO_AGENT_BRIDGE_URL = "https://nemo-bridge.nywezalabs.com"
 
 [[d1_databases]]
 binding = "NEMO_DB"
