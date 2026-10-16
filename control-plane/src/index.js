@@ -451,6 +451,12 @@ async function fetchJoinSetupCode(env, joinUrl) {
       status: response.status || 502,
     });
   }
+  if (typeof payload.bootstrapToken !== "string" || payload.bootstrapToken.length < 1) {
+    throw Object.assign(new Error(`The Gateway pairing payload is missing bootstrapToken (fields: ${Object.keys(payload).join(",") || "none"})`), {
+      code: "gateway_join_payload_invalid",
+      status: 502,
+    });
+  }
   const publicGateway = new URL(joinUrl);
   publicGateway.protocol = "wss:";
   publicGateway.pathname = "/";
