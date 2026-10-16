@@ -389,6 +389,7 @@ async function bridgeRequest(env, path, body) {
   }
   const response = await fetch(`${env.NEMO_AGENT_BRIDGE_URL.replace(/\/$/, "")}${path}`, {
     method: "POST",
+    redirect: "manual",
     headers: {
       Accept: "application/json",
       "content-type": "application/json",
@@ -404,11 +405,18 @@ async function bridgeRequest(env, path, body) {
   } catch {
     result = null;
   }
-  if (!response.ok) {
-    throw Object.assign(new Error(result?.message || result?.error || "Gateway bridge request failed"), {
-      code: result?.error || "gateway_bridge_failed",
+  if (!response.ok || !result || typeof result !== "object") {
+    throw Object.assign(
+      new Error(
+        result?.message ||
+          result?.error ||
+          `Gateway bridge returned HTTP ${response.status} (${response.headers.get("content-type") || "unknown content type"})`,
+      ),
+      {
+        code: result?.error || "gateway_bridge_failed",
       status: response.status || 502,
-    });
+      },
+    );
   }
   return result || {};
 }
