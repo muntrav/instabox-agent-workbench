@@ -3,6 +3,7 @@ const VERSION = "0.4.0";
 const MIN_CONTROL_TOKEN_LENGTH = 6;
 const MAX_RUNS_PAGE = 50;
 const WORKSPACE = "/data/home/workspace";
+const DEFAULT_NODE_NAME = "Nemo Instabox";
 
 const defaultOrigins = new Set([
   "https://nemo-agent-workbench.pages.dev",
@@ -106,9 +107,7 @@ function agentBridgeConfigured(env) {
       typeof env.NEMO_BRIDGE_ACCESS_CLIENT_ID === "string" &&
       env.NEMO_BRIDGE_ACCESS_CLIENT_ID.length > 10 &&
       typeof env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET === "string" &&
-      env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET.length > 10 &&
-      typeof env.NEMO_INSTABOX_NODE_NAME === "string" &&
-      env.NEMO_INSTABOX_NODE_NAME.length > 0,
+      env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET.length > 10,
   );
 }
 
@@ -600,7 +599,7 @@ async function runRemoteAgent(env, run) {
     },
     body: JSON.stringify({
       runId: run.id,
-      nodeName: env.NEMO_INSTABOX_NODE_NAME,
+      nodeName: env.NEMO_INSTABOX_NODE_NAME || DEFAULT_NODE_NAME,
       workspace: WORKSPACE,
       repositoryUrl: run.repository_url,
       ref: run.ref_name,

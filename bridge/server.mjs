@@ -191,6 +191,20 @@ async function nodeApprove(req, res) {
   const body = JSON.parse(await readBody(req));
   const name = typeof body?.nodeName === "string" ? body.nodeName : "Nemo Instabox";
   for (let attempt = 0; attempt < 20; attempt += 1) {
+    const status = await runCli(["nodes", "status", "--json"]);
+    if (status.ok) {
+      try {
+        const rows = JSON.parse(status.stdout.trim());
+        const candidates = Array.isArray(rows) ? rows : rows.nodes || [];
+        const connected = candidates.find((row) => {
+          const label = row.displayName || row.name || row.nodeName || "";
+          return label === name && row.connected === true && row.paired === true;
+        });
+        if (connected) return json(res, 200, { approved: true, nodeName: name, connected: true });
+      } catch {
+        // Continue polling the pending queue if status output is unavailable.
+      }
+    }
     const pending = await runCli(["nodes", "pending", "--json"]);
     if (pending.ok) {
       try {
