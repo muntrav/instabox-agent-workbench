@@ -55,3 +55,17 @@ The separate `control-plane/` Worker is deployed as `nemo-control-plane.democow.
   `INSTABOX_API_KEY` Worker secret.
 - Machine mutations are intentionally disabled in this milestone.
 - The frontend stays static on Pages; the Worker is the only provider integration boundary.
+
+## Execution plan
+
+The complete delivery plan is documented in [`docs/execution-plan.md`](./docs/execution-plan.md):
+
+1. **Foundation and read-only connectivity** — current phase; contract, protected overview, live account status, and deployment proof.
+2. **Controlled run orchestration** — repository/task selection, isolated machine creation, lifecycle controls, and idempotency.
+3. **Agent results and production workflow** — agent execution, logs, tests, previews, persistence, GitHub status, and release gates.
+
+Phase 1 contract validation runs with:
+
+```sh
+npm run validate:contract
+```

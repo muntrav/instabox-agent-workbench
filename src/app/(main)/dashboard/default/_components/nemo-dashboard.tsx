@@ -253,13 +253,30 @@ export function NemoDashboard() {
             </CardAction>
           </CardHeader>
           <CardContent>
-            <EmptyState
-              icon={Server}
-              title={overview?.machines?.length ? "Machine list connected" : "No machines connected"}
-              description={
-                overview ? "No Instabox machines exist yet." : "Connect a Nemo session to load live machine status."
-              }
-            />
+            {overview?.machines?.length ? (
+              <div className="space-y-3">
+                {overview.machines.map((machine) => (
+                  <div className="flex items-center gap-3 rounded-lg border p-3" key={machine.id}>
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
+                      <Server className="size-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-sm">{machine.name || machine.id}</p>
+                      <p className="truncate text-muted-foreground text-xs">{machine.id}</p>
+                    </div>
+                    <Badge variant="outline">{machine.state}</Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                icon={Server}
+                title={overview ? "No machines connected" : "Machine status unavailable"}
+                description={
+                  overview ? "No Instabox machines exist yet." : "Connect a Nemo session to load live machine status."
+                }
+              />
+            )}
           </CardContent>
         </Card>
 

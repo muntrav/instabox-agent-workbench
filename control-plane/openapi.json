@@ -1,0 +1,226 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Nemo Control Plane API",
+    "version": "1.0.0",
+    "description": "Read-only control-plane contract for the Nemo Instabox workbench."
+  },
+  "servers": [
+    {
+      "url": "https://nemo-control-plane.democow.workers.dev"
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Read control-plane capabilities",
+        "responses": {
+          "200": {
+            "description": "Control-plane capability state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/overview": {
+      "get": {
+        "operationId": "getOverview",
+        "summary": "Read the connected Instabox account overview",
+        "security": [
+          {
+            "NemoBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account, usage, templates, and machines.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverviewResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "502": {
+            "$ref": "#/components/responses/ProviderUnavailable"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "NemoBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Short-lived or separately rotated Nemo session password."
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "The Nemo session token is missing or invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "ProviderUnavailable": {
+        "description": "The protected Instabox provider could not be read.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error", "message"],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": true
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": ["service", "version", "capabilities"],
+        "properties": {
+          "service": {
+            "const": "nemo-control-plane"
+          },
+          "version": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "object",
+            "required": ["instaboxRead", "accountData", "mutations"],
+            "properties": {
+              "instaboxRead": {
+                "type": "boolean"
+              },
+              "accountData": {
+                "type": "boolean"
+              },
+              "mutations": {
+                "const": false
+              }
+            }
+          }
+        }
+      },
+      "Account": {
+        "type": "object",
+        "properties": {
+          "login": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Machine": {
+        "type": "object",
+        "required": ["id", "name", "state"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "Template": {
+        "type": "object",
+        "required": ["id", "version"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "OverviewResponse": {
+        "type": "object",
+        "required": ["version", "readOnly", "account", "usage", "templates", "machines"],
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "readOnly": {
+            "const": true
+          },
+          "account": {
+            "$ref": "#/components/schemas/Account"
+          },
+          "usage": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "templates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Template"
+            }
+          },
+          "machines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Machine"
+            }
+          },
+          "nextCursor": {
+            "type": ["string", "null"]
+          }
+        }
+      }
+    }
+  }
+}
