@@ -462,10 +462,11 @@ async function fetchJoinSetupCode(env, joinUrl) {
   publicGateway.pathname = "/";
   publicGateway.search = "";
   publicGateway.hash = "";
+  const publicGatewayUrl = publicGateway.toString().replace(/\/$/, "");
   return encodeSetupPayload({
     ...payload,
-    url: publicGateway.toString(),
-    urls: [publicGateway.toString()],
+    url: publicGatewayUrl,
+    urls: [publicGatewayUrl],
   });
 }
 
