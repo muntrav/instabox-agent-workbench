@@ -627,6 +627,7 @@ async function runRemoteAgent(env, run) {
       "content-type": "application/json",
       "CF-Access-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
       "CF-Access-Client-Secret": env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
+      "X-Nemo-Bridge-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
     },
     body: JSON.stringify({
       runId: run.id,
