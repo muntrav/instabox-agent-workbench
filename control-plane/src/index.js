@@ -520,7 +520,7 @@ async function provisionNode(request, env) {
           "NODE_VERSION=24.16.0; NODE_DIR=\"$HOME/.local/node-v$NODE_VERSION-linux-x64\"; if [ ! -x \"$NODE_DIR/bin/node\" ]; then mkdir -p \"$HOME/.local\"; curl -fsSL \"https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz\" | tar -xJ -C \"$HOME/.local\"; fi; export PATH=\"$NODE_DIR/bin:$HOME/.local/bin:$PATH\"",
           "npm install --prefix \"$HOME/.local\" --global openclaw@2026.9.3; OPENCLAW_BIN=\"$HOME/.local/bin/openclaw\"",
           "TARGET_FILE=\"$HOME/.nemo-openclaw-join\"; umask 077; cat > \"$TARGET_FILE\"",
-          "\"$OPENCLAW_BIN\" connect --target-file \"$TARGET_FILE\" --service --display-name \"Nemo Instabox\"",
+          "nohup \"$OPENCLAW_BIN\" connect --target-file \"$TARGET_FILE\" --display-name \"Nemo Instabox\" > \"$HOME/.nemo-openclaw-connect.log\" 2>&1 </dev/null & echo $!",
         ].join("; "),
         timeoutSeconds: 600,
         envs: {
