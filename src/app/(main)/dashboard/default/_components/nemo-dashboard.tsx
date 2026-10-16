@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 import Link from "next/link";
 
@@ -28,10 +28,10 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { CONTROL_PLANE_ORIGIN } from "@/config/control-plane";
 
 const templates = [
-  { name: "universal", description: "General development and test runs", status: "Ready" },
-  { name: "agent-browser", description: "Linux desktop and browser automation", status: "Ready" },
-  { name: "herdr", description: "Lightweight agent workspace", status: "Available" },
-  { name: "orca", description: "Specialized agent workspace", status: "Available" },
+  { name: "universal", description: "General development and test runs", status: "Preview" },
+  { name: "agent-browser", description: "Linux desktop and browser automation", status: "Preview" },
+  { name: "herdr", description: "Lightweight agent workspace", status: "Preview" },
+  { name: "orca", description: "Specialized agent workspace", status: "Preview" },
 ];
 
 const setupSteps = [
@@ -40,14 +40,60 @@ const setupSteps = [
   { label: "Launch the first isolated run", complete: false },
 ];
 
+type Overview = {
+  account?: { name?: string; login?: string };
+  machines?: Array<{ id: string; name: string; state: string }>;
+  templates?: Array<{ id: string; version: string }>;
+  usage?: { machines?: number; limits?: { maxMachines?: number } };
+};
+
 export function NemoDashboard() {
   const [connection, setConnection] = useState<"checking" | "online" | "offline">("checking");
+  const [controlToken, setControlToken] = useState("");
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [sessionMessage, setSessionMessage] = useState("Account data requires a Nemo session token.");
+  const [connecting, setConnecting] = useState(false);
   let connectionLabel = "Unavailable";
   if (connection === "checking") connectionLabel = "Checking…";
-  if (connection === "online") connectionLabel = "Read-only API online";
+  if (connection === "online") connectionLabel = overview ? "Account data online" : "Read-only health online";
+
+  const visibleTemplates = overview?.templates?.length
+    ? overview.templates.map((template) => ({
+        name: template.id,
+        description: `Connected version ${template.version}`,
+        status: "Live",
+      }))
+    : templates;
+
+  async function connectSession(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!controlToken.trim()) {
+      setSessionMessage("Enter the separate Nemo session token to connect.");
+      return;
+    }
+
+    setConnecting(true);
+    setSessionMessage("Checking the protected account session…");
+    try {
+      const response = await fetch(`${CONTROL_PLANE_ORIGIN}/api/overview`, {
+        headers: { Authorization: `Bearer ${controlToken.trim()}` },
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.message || "The session could not be verified.");
+      sessionStorage.setItem("nemo-control-token", controlToken.trim());
+      setOverview(body);
+      setSessionMessage(`Connected to ${body.account?.name || "the Instabox account"}.`);
+    } catch (error) {
+      setOverview(null);
+      setSessionMessage(error instanceof Error ? error.message : "The session could not be verified.");
+    } finally {
+      setConnecting(false);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
+    setControlToken(sessionStorage.getItem("nemo-control-token") || "");
     fetch(`${CONTROL_PLANE_ORIGIN}/health`, { signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error("Control plane health check failed");
@@ -59,6 +105,22 @@ export function NemoDashboard() {
       .catch(() => setConnection("offline"));
 
     return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const token = sessionStorage.getItem("nemo-control-token");
+    if (!token) return;
+    fetch(`${CONTROL_PLANE_ORIGIN}/api/overview`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.message || "The session could not be verified.");
+        setOverview(body);
+        setSessionMessage(`Connected to ${body.account?.name || "the Instabox account"}.`);
+      })
+      .catch(() => {
+        sessionStorage.removeItem("nemo-control-token");
+        setSessionMessage("Account data requires a Nemo session token.");
+      });
   }, []);
 
   return (
@@ -101,7 +163,11 @@ export function NemoDashboard() {
             {setupSteps.map((step, index) => (
               <div className="flex items-center gap-3 rounded-lg border bg-background/60 p-3" key={step.label}>
                 <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted font-medium text-xs">
-                  {step.complete ? <CheckCircle2 className="size-4 text-green-600" /> : index + 1}
+                  {(index === 0 && overview) || step.complete ? (
+                    <CheckCircle2 className="size-4 text-green-600" />
+                  ) : (
+                    index + 1
+                  )}
                 </div>
                 <span className="text-sm">{step.label}</span>
               </div>
@@ -116,7 +182,9 @@ export function NemoDashboard() {
               </Link>
             </Button>
             <span className="text-muted-foreground text-xs">
-              The read-only control plane is online; authenticated account data is the next gate.
+              {overview
+                ? "Live account data is connected; machine mutations remain disabled."
+                : "The read-only control plane is online; authenticated account data is the next gate."}
             </span>
           </div>
         </CardContent>
@@ -126,8 +194,12 @@ export function NemoDashboard() {
         <SummaryCard
           icon={Server}
           label="Active machines"
-          value="—"
-          detail={connection === "online" ? "Session required to load live data" : "Control plane unavailable"}
+          value={overview?.machines?.length?.toString() || "—"}
+          detail={
+            overview
+              ? `${overview.usage?.limits?.maxMachines ?? ""} machine limit`
+              : "Session required to load live data"
+          }
         />
         <SummaryCard icon={CirclePlay} label="Running tasks" value="—" detail="Runs will appear here" />
         <SummaryCard icon={GitBranch} label="Repositories" value="—" detail="GitHub integration pending" />
@@ -151,8 +223,10 @@ export function NemoDashboard() {
           <CardContent>
             <EmptyState
               icon={Server}
-              title="No machines connected"
-              description="Once the control plane has an Instabox key, running machines and their status will show here."
+              title={overview?.machines?.length ? "Machine list connected" : "No machines connected"}
+              description={
+                overview ? "No Instabox machines exist yet." : "Connect a Nemo session to load live machine status."
+              }
             />
           </CardContent>
         </Card>
@@ -203,13 +277,17 @@ export function NemoDashboard() {
         <Card id="templates">
           <CardHeader>
             <CardTitle>Machine templates</CardTitle>
-            <CardDescription>Available options from the connected Instabox account.</CardDescription>
+            <CardDescription>
+              {overview
+                ? "Live options from the connected Instabox account."
+                : "Preview catalog until a session is connected."}
+            </CardDescription>
             <CardAction>
-              <Badge variant="outline">4 templates</Badge>
+              <Badge variant="outline">{visibleTemplates.length} templates</Badge>
             </CardAction>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2">
-            {templates.map((template) => (
+            {visibleTemplates.map((template) => (
               <div className="rounded-lg border p-3" key={template.name}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -230,10 +308,26 @@ export function NemoDashboard() {
           <CardTitle>Control-plane status</CardTitle>
           <CardDescription>Credentials and dynamic provider calls stay server-side.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-3">
-          <StatusItem icon={ShieldCheck} label="Credential location" value="Protected server secret" />
-          <StatusItem icon={Clock3} label="Execution boundary" value="Instabox only" />
-          <StatusItem icon={Activity} label="Connection" value={connectionLabel} />
+        <CardContent className="space-y-4">
+          <form className="flex flex-col gap-2 sm:flex-row" onSubmit={connectSession}>
+            <input
+              aria-label="Nemo session token"
+              className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              onChange={(event) => setControlToken(event.target.value)}
+              placeholder="Nemo session token"
+              type="password"
+              value={controlToken}
+            />
+            <Button disabled={connecting} type="submit">
+              {connecting ? "Connecting…" : "Connect session"}
+            </Button>
+          </form>
+          <p className="text-muted-foreground text-xs">{sessionMessage} Stored only in this browser session.</p>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <StatusItem icon={ShieldCheck} label="Credential location" value="Protected server secret" />
+            <StatusItem icon={Clock3} label="Execution boundary" value="Instabox only" />
+            <StatusItem icon={Activity} label="Connection" value={connectionLabel} />
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -284,32 +378,3 @@ function BoundaryRow({
   state,
 }: {
   icon: LucideIcon;
-  title: string;
-  description: string;
-  state: string;
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
-        <Icon className="size-4" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="font-medium text-sm">{title}</p>
-        <p className="truncate text-muted-foreground text-xs">{description}</p>
-      </div>
-      <Badge variant="outline">{state}</Badge>
-    </div>
-  );
-}
-
-function StatusItem({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
-  return (
-    <div className="flex items-center gap-3 rounded-lg border p-3">
-      <Icon className="size-4 text-muted-foreground" />
-      <div>
-        <p className="text-muted-foreground text-xs">{label}</p>
-        <p className="font-medium text-sm">{value}</p>
-      </div>
-    </div>
-  );
-}
