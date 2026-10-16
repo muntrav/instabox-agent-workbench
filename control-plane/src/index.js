@@ -451,7 +451,16 @@ async function fetchJoinSetupCode(env, joinUrl) {
       status: response.status || 502,
     });
   }
-  return encodeSetupPayload(payload);
+  const publicGateway = new URL(joinUrl);
+  publicGateway.protocol = "wss:";
+  publicGateway.pathname = "/";
+  publicGateway.search = "";
+  publicGateway.hash = "";
+  return encodeSetupPayload({
+    ...payload,
+    url: publicGateway.toString(),
+    urls: [publicGateway.toString()],
+  });
 }
 
 function machineRows(body) {
