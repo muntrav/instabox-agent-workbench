@@ -73,9 +73,11 @@ npm run validate:contract
 ## Run-linked agent chats
 
 Each run card now has a **Chat** action. The first click creates one chat for that run; later clicks reopen it. The chat page
-uses Nemo's existing design system with a Vercel Chatbot-inspired conversation layout, a message composer, run context, and
-recent tool activity. Follow-up messages reuse the run's OpenClaw session and dedicated Instabox node.
+uses an edited implementation of Vercel Chatbot's conversation shell, message thread, and prompt composer, customized with
+Nemo's existing design system, run context, and recent tool activity. Follow-up messages reuse the run's OpenClaw session
+and dedicated Instabox node. The source basis is pinned and attributed in [`docs/third-party-notices.md`](./docs/third-party-notices.md).
 
 Chats are intentionally ephemeral: suspending a machine preserves its chat, while successful machine deletion, cancellation,
 or cleanup deletes the chat and messages from D1. See [`docs/chat-design.md`](./docs/chat-design.md) for the lifecycle and
 API contract.
+
