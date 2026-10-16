@@ -1,5 +1,6 @@
 const INSTABOX_ORIGIN = "https://api.instabox.sh";
 const VERSION = "0.1.0";
+const MIN_CONTROL_TOKEN_LENGTH = 6;
 
 const defaultOrigins = new Set([
   "https://nemo-agent-workbench.pages.dev",
@@ -40,7 +41,7 @@ function unauthorized(request, env) {
 }
 
 function authConfigured(env) {
-  return typeof env.NEMO_CONTROL_TOKEN === "string" && env.NEMO_CONTROL_TOKEN.length >= 24;
+  return typeof env.NEMO_CONTROL_TOKEN === "string" && env.NEMO_CONTROL_TOKEN.length > MIN_CONTROL_TOKEN_LENGTH - 1;
 }
 
 function isAuthorized(request, env) {
