@@ -463,8 +463,8 @@ async function provisionNode(request, env) {
       body: {
         cmd: [
           "set -eu",
-          "command -v openclaw >/dev/null 2>&1 || npm install --global openclaw@2026.9.3",
-          "openclaw connect \"$NEMO_JOIN_URL\" --service --display-name \"$NEMO_NODE_NAME\"",
+          "if command -v openclaw >/dev/null 2>&1; then OPENCLAW_BIN=\"$(command -v openclaw)\"; else npm install --prefix \"$HOME/.local\" --no-save openclaw@2026.9.3; OPENCLAW_BIN=\"$HOME/.local/bin/openclaw\"; fi",
+          "\"$OPENCLAW_BIN\" connect \"$NEMO_JOIN_URL\" --service --display-name \"$NEMO_NODE_NAME\"",
         ].join("; "),
         timeoutSeconds: 600,
         envs: {
