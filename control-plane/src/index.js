@@ -1070,6 +1070,44 @@ export default {
     if (request.method === "OPTIONS") return json({ ok: true }, 200, request, env);
 
     if (url.pathname === "/health" && request.method === "GET") {
+      if (url.searchParams.get("check") === "bridge-live") {
+        const auth = requireAuth(request, env);
+        if (auth) return auth;
+        if (!bridgeCredentialsConfigured(env))
+          return errorResponse("gateway_bridge_not_configured", 503, request, env);
+        try {
+          const bridgeResponse = await fetch(`${env.NEMO_AGENT_BRIDGE_URL.replace(/\/$/, "")}/health`, {
+            method: "GET",
+            redirect: "manual",
+            headers: {
+              Accept: "application/json",
+              "CF-Access-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
+              "CF-Access-Client-Secret": env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
+              "X-Nemo-Bridge-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
+            },
+          });
+          return json(
+            {
+              service: "nemo-control-plane",
+              bridge: {
+                status: bridgeResponse.status,
+                ok: bridgeResponse.ok,
+                contentType: bridgeResponse.headers.get("content-type"),
+                locationPresent: Boolean(bridgeResponse.headers.get("location")),
+                cfRay: bridgeResponse.headers.get("cf-ray"),
+                server: bridgeResponse.headers.get("server"),
+              },
+            },
+            200,
+            request,
+            env,
+          );
+        } catch (error) {
+          return errorResponse("gateway_bridge_unreachable", 502, request, env, {
+            message: redact(error?.message || "bridge fetch failed"),
+          });
+        }
+      }
       return json(
         {
           service: "nemo-control-plane",
