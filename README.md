@@ -43,5 +43,15 @@ This first milestone is a frontend-only shell; Instabox API actions remain behin
 
 ## Runtime boundary
 
-The current dashboard is a frontend-only preview. Dynamic Instabox and GitHub calls must be added through a protected
-server-side control plane; provider keys must never be placed in browser code or committed to this repository.
+The dashboard now checks the deployed control-plane health endpoint. Account data is exposed only through the protected
+Worker contract at `GET /api/overview`; provider keys must never be placed in browser code or committed to this repository.
+
+## Control plane
+
+The separate `control-plane/` Worker is deployed as `nemo-control-plane.democow.workers.dev`.
+
+- `GET /health` is a public capability check.
+- `GET /api/overview` requires `Authorization: Bearer <NEMO_CONTROL_TOKEN>` and reads Instabox with the protected
+  `INSTABOX_API_KEY` Worker secret.
+- Machine mutations are intentionally disabled in this milestone.
+- The frontend stays static on Pages; the Worker is the only provider integration boundary.

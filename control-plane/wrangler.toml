@@ -1,0 +1,6 @@
+name = "nemo-control-plane"
+main = "src/index.js"
+compatibility_date = "2026-10-16"
+
+[vars]
+ALLOWED_ORIGINS = "https://nemo-agent-workbench.pages.dev,http://localhost:3000,http://127.0.0.1:3000"

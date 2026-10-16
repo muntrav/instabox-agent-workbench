@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
 import Link from "next/link";
 
 import {
@@ -21,6 +25,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CONTROL_PLANE_ORIGIN } from "@/config/control-plane";
 
 const templates = [
   { name: "universal", description: "General development and test runs", status: "Ready" },
@@ -30,12 +35,32 @@ const templates = [
 ];
 
 const setupSteps = [
-  { label: "Connect an Instabox API key", complete: false },
+  { label: "Protect the control-plane session", complete: false },
   { label: "Choose a repository", complete: false },
   { label: "Launch the first isolated run", complete: false },
 ];
 
 export function NemoDashboard() {
+  const [connection, setConnection] = useState<"checking" | "online" | "offline">("checking");
+  let connectionLabel = "Unavailable";
+  if (connection === "checking") connectionLabel = "Checking…";
+  if (connection === "online") connectionLabel = "Read-only API online";
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`${CONTROL_PLANE_ORIGIN}/health`, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("Control plane health check failed");
+        return response.json();
+      })
+      .then((body: { capabilities?: { instaboxRead?: boolean } }) => {
+        setConnection(body.capabilities?.instaboxRead ? "online" : "offline");
+      })
+      .catch(() => setConnection("offline"));
+
+    return () => controller.abort();
+  }, []);
+
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
@@ -90,13 +115,20 @@ export function NemoDashboard() {
                 <ExternalLink />
               </Link>
             </Button>
-            <span className="text-muted-foreground text-xs">The API-backed launch flow is the next milestone.</span>
+            <span className="text-muted-foreground text-xs">
+              The read-only control plane is online; authenticated account data is the next gate.
+            </span>
           </div>
         </CardContent>
       </Card>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Workbench summary">
-        <SummaryCard icon={Server} label="Active machines" value="—" detail="Connect Instabox to load live data" />
+        <SummaryCard
+          icon={Server}
+          label="Active machines"
+          value="—"
+          detail={connection === "online" ? "Session required to load live data" : "Control plane unavailable"}
+        />
         <SummaryCard icon={CirclePlay} label="Running tasks" value="—" detail="Runs will appear here" />
         <SummaryCard icon={GitBranch} label="Repositories" value="—" detail="GitHub integration pending" />
         <SummaryCard icon={Activity} label="Latest result" value="—" detail="No runs yet" />
@@ -201,7 +233,7 @@ export function NemoDashboard() {
         <CardContent className="grid gap-4 sm:grid-cols-3">
           <StatusItem icon={ShieldCheck} label="Credential location" value="Protected server secret" />
           <StatusItem icon={Clock3} label="Execution boundary" value="Instabox only" />
-          <StatusItem icon={Activity} label="Connection" value="Awaiting API integration" />
+          <StatusItem icon={Activity} label="Connection" value={connectionLabel} />
         </CardContent>
       </Card>
     </div>
