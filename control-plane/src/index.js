@@ -749,6 +749,15 @@ async function executeRun(runId, env) {
     });
     await appendEvent(env, runId, "repository_ready", { commitSha });
 
+    await machineCommand(
+      env,
+      runId,
+      machine,
+      `set -eu; cd ${shellQuote(WORKSPACE)}; if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; else echo 'No Node package manifest; dependency install skipped.'; fi`,
+      900,
+    );
+    await appendEvent(env, runId, "dependencies_ready");
+
     const agent = await runRemoteAgent(env, { ...run, node_name: nodeName });
     await appendLog(env, runId, "agent", agent.result);
     await updateRun(env, runId, { agent_status: "succeeded", status: "testing", updated_at: now() });
