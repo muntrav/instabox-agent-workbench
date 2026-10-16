@@ -806,6 +806,7 @@ async function executeRun(runId, env) {
     if (!latest?.retain_machine) {
       await removeRunNode(env, runId, nodeName);
       await deleteMachine(env, machine, `nemo-cleanup-${runId}`);
+      await updateRun(env, runId, { node_status: "removed", updated_at: now() });
       await appendEvent(env, runId, "machine_cleaned");
     }
   } catch (error) {
