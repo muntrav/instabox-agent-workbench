@@ -378,3 +378,50 @@ function SummaryCard({
     </Card>
   );
 }
+
+function EmptyState({ icon: Icon, title, description }: { icon: LucideIcon; title: string; description: string }) {
+  return (
+    <div className="flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed bg-muted/20 px-6 text-center">
+      <Icon className="size-6 text-muted-foreground" />
+      <p className="mt-3 font-medium text-sm">{title}</p>
+      <p className="mt-1 max-w-md text-muted-foreground text-xs">{description}</p>
+    </div>
+  );
+}
+
+function BoundaryRow({
+  icon: Icon,
+  title,
+  description,
+  state,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  state: string;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
+        <Icon className="size-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="font-medium text-sm">{title}</p>
+        <p className="truncate text-muted-foreground text-xs">{description}</p>
+      </div>
+      <Badge variant="outline">{state}</Badge>
+    </div>
+  );
+}
+
+function StatusItem({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border p-3">
+      <Icon className="size-4 text-muted-foreground" />
+      <div>
+        <p className="text-muted-foreground text-xs">{label}</p>
+        <p className="font-medium text-sm">{value}</p>
+      </div>
+    </div>
+  );
+}
