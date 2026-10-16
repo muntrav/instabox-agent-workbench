@@ -405,7 +405,6 @@ async function pairMachineNode(env, machineIdValue, nodeName, runId = null) {
       status: 502,
     });
   }
-  const setupCode = await fetchJoinSetupCode(env, joinUrl);
   const command = await instabox(`/v1/machines/${encodeURIComponent(machineIdValue)}/exec`, env, {
     method: "POST",
     body: {
@@ -421,7 +420,7 @@ async function pairMachineNode(env, machineIdValue, nodeName, runId = null) {
         CF_ACCESS_CLIENT_ID: env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
         CF_ACCESS_CLIENT_SECRET: env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
       },
-      stdin: `${setupCode}\n`,
+      stdin: `${joinUrl}\n`,
     },
   });
   if (runId) {
