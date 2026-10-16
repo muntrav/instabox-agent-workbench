@@ -494,7 +494,14 @@ async function provisionNode(request, env) {
     }
 
     const join = await bridgeRequest(env, "/v1/node/join", { nodeName });
-    const setupCode = await fetchJoinSetupCode(env, join.joinUrl);
+    const joinUrl = join?.joinUrl || join?.url || join?.result?.joinUrl;
+    if (typeof joinUrl !== "string") {
+      throw Object.assign(new Error("The Gateway bridge did not return a pairing URL"), {
+        code: "gateway_join_url_missing",
+        status: 502,
+      });
+    }
+    const setupCode = await fetchJoinSetupCode(env, joinUrl);
     const command = await instabox(`/v1/machines/${encodeURIComponent(machine.id)}/exec`, env, {
       method: "POST",
       body: {
