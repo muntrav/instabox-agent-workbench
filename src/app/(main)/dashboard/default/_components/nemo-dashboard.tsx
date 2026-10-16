@@ -141,6 +141,38 @@ export function NemoDashboard() {
         </Button>
       </section>
 
+      <Card className="border-primary/25 bg-primary/[0.04]" id="settings">
+        <CardHeader>
+          <CardTitle>Connect Nemo</CardTitle>
+          <CardDescription>
+            Enter the Nemo password you created for this dashboard. It is separate from your Cloudflare and Instabox
+            credentials.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <form className="flex flex-col gap-2 sm:flex-row" onSubmit={connectSession}>
+            <label className="sr-only" htmlFor="nemo-session-password">
+              Nemo password
+            </label>
+            <input
+              aria-describedby="nemo-session-help"
+              className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              id="nemo-session-password"
+              onChange={(event) => setControlToken(event.target.value)}
+              placeholder="Enter Nemo password"
+              type="password"
+              value={controlToken}
+            />
+            <Button disabled={connecting} type="submit">
+              {connecting ? "Connecting…" : "Connect Nemo"}
+            </Button>
+          </form>
+          <p className="text-muted-foreground text-xs" id="nemo-session-help">
+            {sessionMessage} Stored only in this browser session.
+          </p>
+        </CardContent>
+      </Card>
+
       <Card className="border-primary/25 bg-primary/[0.04]" id="new-run">
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -303,26 +335,12 @@ export function NemoDashboard() {
         </Card>
       </div>
 
-      <Card id="settings">
+      <Card>
         <CardHeader>
           <CardTitle>Control-plane status</CardTitle>
           <CardDescription>Credentials and dynamic provider calls stay server-side.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <form className="flex flex-col gap-2 sm:flex-row" onSubmit={connectSession}>
-            <input
-              aria-label="Nemo session token"
-              className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              onChange={(event) => setControlToken(event.target.value)}
-              placeholder="Nemo session token"
-              type="password"
-              value={controlToken}
-            />
-            <Button disabled={connecting} type="submit">
-              {connecting ? "Connecting…" : "Connect session"}
-            </Button>
-          </form>
-          <p className="text-muted-foreground text-xs">{sessionMessage} Stored only in this browser session.</p>
+        <CardContent>
           <div className="grid gap-4 sm:grid-cols-3">
             <StatusItem icon={ShieldCheck} label="Credential location" value="Protected server secret" />
             <StatusItem icon={Clock3} label="Execution boundary" value="Instabox only" />
@@ -360,21 +378,3 @@ function SummaryCard({
     </Card>
   );
 }
-
-function EmptyState({ icon: Icon, title, description }: { icon: LucideIcon; title: string; description: string }) {
-  return (
-    <div className="flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed bg-muted/20 px-6 text-center">
-      <Icon className="size-6 text-muted-foreground" />
-      <p className="mt-3 font-medium text-sm">{title}</p>
-      <p className="mt-1 max-w-md text-muted-foreground text-xs">{description}</p>
-    </div>
-  );
-}
-
-function BoundaryRow({
-  icon: Icon,
-  title,
-  description,
-  state,
-}: {
-  icon: LucideIcon;
