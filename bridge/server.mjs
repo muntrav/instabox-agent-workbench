@@ -163,7 +163,12 @@ function runCli(args, timeoutMs = 30000) {
   return new Promise((resolve) => {
     const child = spawn(OPENCLAW_BIN, args, {
       cwd: process.env.NEMO_BRIDGE_WORKDIR || "/opt/openclaw/state/agents/nemo/workspace",
-      env: { ...process.env, NO_COLOR: "1" },
+      env: {
+        ...process.env,
+        NO_COLOR: "1",
+        TMPDIR: process.env.NEMO_BRIDGE_TMPDIR || "/tmp",
+        OPENCLAW_STATE_DIR: process.env.NEMO_OPENCLAW_STATE_DIR || "/opt/openclaw/state/agents/nemo",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -208,7 +213,7 @@ async function nodeJoin(req, res) {
     "--token",
     token,
   ]);
-  if (!result.ok) return json(res, 502, { error: "join_code_failed" });
+  if (!result.ok) return json(res, 502, { error: "join_code_failed", detail: redact(result.stderr).slice(-400) });
   try {
     const body = JSON.parse(result.stdout.trim());
     if (typeof body.setupCode !== "string" || body.setupCode.length < 1)
