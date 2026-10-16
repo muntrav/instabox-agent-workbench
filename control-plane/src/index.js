@@ -17,6 +17,10 @@ function now() {
   return new Date().toISOString();
 }
 
+function validRunId(value) {
+  return typeof value === "string" && /^run_[A-Za-z0-9]+$/.test(value);
+}
+
 function allowedOrigin(request, env) {
   const origin = request.headers.get("Origin");
   const configured = (env.ALLOWED_ORIGINS || "")
@@ -879,7 +883,6 @@ async function createRun(request, env, ctx) {
       message: "The OpenClaw Gateway bridge and Instabox node are not configured.",
     });
   }
-
   if (!env.NEMO_RUN_WORKFLOW?.create) {
     return errorResponse("workflow_not_configured", 503, request, env, {
       message: "Durable run execution is not configured.",
