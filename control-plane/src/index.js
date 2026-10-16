@@ -314,7 +314,8 @@ async function instabox(path, env, options = {}) {
     body = { raw: text.slice(0, 500) };
   }
   if (!response.ok) {
-    throw Object.assign(new Error("Instabox request failed"), {
+    const providerMessage = body?.message || body?.error?.message || body?.error || body?.raw;
+    throw Object.assign(new Error(providerMessage ? `Instabox request failed: ${providerMessage}` : `Instabox request failed with HTTP ${response.status}`), {
       status: response.status,
       code: body?.code || "instabox_error",
       body,
