@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
+import os from "node:os";
+import path from "node:path";
 
 const HOST = process.env.NEMO_BRIDGE_HOST || "127.0.0.1";
 const PORT = Number(process.env.NEMO_BRIDGE_PORT || 18790);
@@ -99,15 +101,18 @@ function promptFor(input) {
   ].join("\n");
 }
 
-function runAgent(prompt) {
+async function runAgent(prompt) {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "nemo-agent-"));
+  const messageFile = path.join(tempDir, "message.txt");
+  await writeFile(messageFile, prompt, { encoding: "utf8", mode: 0o600 });
   return new Promise((resolve) => {
     const child = spawn(
       OPENCLAW_BIN,
-      ["agent", "--agent", AGENT_ID, "--message-file", "-", "--json", "--timeout", String(AGENT_TIMEOUT_SECONDS)],
+      ["agent", "--agent", AGENT_ID, "--message-file", messageFile, "--json", "--timeout", String(AGENT_TIMEOUT_SECONDS)],
       {
         cwd: process.env.NEMO_BRIDGE_WORKDIR || "/opt/openclaw/state/agents/nemo/workspace",
         env: { ...process.env, NO_COLOR: "1" },
-        stdio: ["pipe", "pipe", "pipe"],
+        stdio: ["ignore", "pipe", "pipe"],
       },
     );
     let stdout = "";
@@ -120,21 +125,24 @@ function runAgent(prompt) {
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
     });
-    child.on("error", (error) => resolve({ ok: false, error: redact(error.message) }));
+    const finish = (result) => {
+      rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      resolve(result);
+    };
+    child.on("error", (error) => finish({ ok: false, error: redact(error.message) }));
     child.on("close", (code) => {
       if (code !== 0) {
-        resolve({ ok: false, error: redact(stderr || stdout || `agent exited with ${code}`) });
+        finish({ ok: false, error: redact(stderr || stdout || `agent exited with ${code}`) });
         return;
       }
       try {
         const result = JSON.parse(stdout.trim());
         const text = result?.result?.payloads?.find((item) => typeof item?.text === "string")?.text || "";
-        resolve({ ok: true, text, model: result?.result?.meta?.agentMeta?.model || null });
+        finish({ ok: true, text, model: result?.result?.meta?.agentMeta?.model || null });
       } catch {
-        resolve({ ok: false, error: "OpenClaw returned an unreadable agent result." });
+        finish({ ok: false, error: "OpenClaw returned an unreadable agent result." });
       }
     });
-    child.stdin.end(prompt);
   });
 }
 
