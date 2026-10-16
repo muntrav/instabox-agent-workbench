@@ -470,8 +470,8 @@ async function provisionNode(request, env) {
           "set -eu",
           "NODE_VERSION=24.16.0; NODE_DIR=\"$HOME/.local/node-v$NODE_VERSION-linux-x64\"; if [ ! -x \"$NODE_DIR/bin/node\" ]; then mkdir -p \"$HOME/.local\"; curl -fsSL \"https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz\" | tar -xJ -C \"$HOME/.local\"; fi; export PATH=\"$NODE_DIR/bin:$HOME/.local/bin:$PATH\"",
           "npm install --prefix \"$HOME/.local\" --global openclaw@2026.9.3; OPENCLAW_BIN=\"$HOME/.local/bin/openclaw\"",
-          "JOIN_URL=$(cat)",
-          "\"$OPENCLAW_BIN\" connect \"$JOIN_URL\" --service --display-name \"Nemo Instabox\"",
+          "TARGET_FILE=\"$HOME/.nemo-openclaw-join\"; umask 077; cat > \"$TARGET_FILE\"",
+          "\"$OPENCLAW_BIN\" connect --target-file \"$TARGET_FILE\" --service --display-name \"Nemo Instabox\"",
         ].join("; "),
         timeoutSeconds: 600,
         envs: {
