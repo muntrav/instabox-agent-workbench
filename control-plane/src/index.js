@@ -441,7 +441,7 @@ async function provisionNode(request, env) {
     } else {
       const createdBody = await instabox("/v1/machines", env, {
         method: "POST",
-        idempotencyKey: "nemo-gateway-node-v1",
+        idempotencyKey: "nemo-gateway-node-v2",
         body: {
           name: machineName,
           templateId: "universal",
