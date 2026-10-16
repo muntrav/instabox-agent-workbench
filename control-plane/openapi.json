@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Nemo Control Plane API",
-    "version": "2.0.0",
-    "description": "Control-plane contract for Nemo run orchestration, durable results, and Instabox lifecycle actions."
+    "version": "2.1.0",
+    "description": "Control-plane contract for Nemo run orchestration, per-run Instabox nodes, durable results, and lifecycle actions."
   },
   "servers": [
     {
@@ -267,6 +267,9 @@
           "previewPort": { "type": ["integer", "null"] },
           "previewUrl": { "type": ["string", "null"] },
           "machineId": { "type": ["string", "null"] },
+          "nodeName": { "type": ["string", "null"] },
+          "nodeStatus": { "type": "string", "enum": ["pending", "pairing", "connected", "removed"] },
+          "nodePairedAt": { "type": ["string", "null"], "format": "date-time" },
           "commitSha": { "type": ["string", "null"] },
           "status": { "type": "string" },
           "agentStatus": { "type": "string" },
@@ -296,7 +299,7 @@
         "required": ["id", "stream", "chunk", "createdAt"],
         "properties": {
           "id": { "type": "integer" },
-          "stream": { "type": "string", "enum": ["stdout", "stderr"] },
+          "stream": { "type": "string", "enum": ["stdout", "stderr", "node", "agent"] },
           "chunk": { "type": "string" },
           "createdAt": { "type": "string", "format": "date-time" }
         }
@@ -360,6 +363,7 @@
               "orchestration",
               "agentRunner",
               "gatewayBridge",
+              "perRunNodeBinding",
               "mutations"
             ],
             "properties": {
@@ -381,8 +385,11 @@
               "gatewayBridge": {
                 "type": "boolean"
               },
+              "perRunNodeBinding": {
+                "type": "boolean"
+              },
               "mutations": {
-                "const": false
+                "type": "boolean"
               }
             }
           }

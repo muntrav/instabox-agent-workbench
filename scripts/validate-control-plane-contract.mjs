@@ -23,7 +23,7 @@ const requiredOperations = [
 ];
 
 if (contract.openapi !== "3.1.0") throw new Error("Expected an OpenAPI 3.1 contract.");
-if (contract.info?.version !== "2.0.0") throw new Error("Expected control-plane contract version 2.0.0.");
+if (contract.info?.version !== "2.1.0") throw new Error("Expected control-plane contract version 2.1.0.");
 
 for (const path of requiredPaths) {
   if (!contract.paths?.[path]) throw new Error(`Missing path ${path}.`);
@@ -41,6 +41,7 @@ if (!overview.security?.some((scheme) => scheme.NemoBearer)) throw new Error("Ov
 for (const status of ["401", "502"]) {
   if (!overview.responses?.[status]) throw new Error(`Overview is missing ${status} error response.`);
 }
+
 
 for (const [path, methods] of Object.entries(contract.paths)) {
   if (!path.startsWith("/api/")) continue;

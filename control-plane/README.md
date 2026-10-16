@@ -11,6 +11,7 @@ separate from the static Cloudflare Pages frontend.
 - `GET/POST /api/runs` queues and reads durable runs.
 - `GET /api/runs/:id/logs` returns redacted persisted command output.
 - `POST /api/runs/:id/actions` controls a run machine or publishes a preview URL.
+- Each run pairs its own Instabox machine as `nemo-run-<runId>` and binds the OpenClaw agent session to that node.
 - Resource-creating and destructive actions use Instabox idempotency keys; deletes require `X-Nemo-Confirm: true`.
 
 ## Deployment
@@ -25,12 +26,12 @@ Required protected Worker secrets:
 - `NEMO_AGENT_BRIDGE_URL`: HTTPS URL for the separate Cloudflare Access-protected VPS bridge.
 - `NEMO_BRIDGE_ACCESS_CLIENT_ID`: Cloudflare Access service-token client ID.
 - `NEMO_BRIDGE_ACCESS_CLIENT_SECRET`: Cloudflare Access service-token client secret.
-- `NEMO_INSTABOX_NODE_NAME`: the explicitly paired Instabox OpenClaw node name.
+- `NEMO_INSTABOX_NODE_NAME`: optional persistent diagnostic node name used only by the provisioning endpoint.
 
 The Worker is deployed independently from Pages. The frontend may call `/health`
 without credentials, but all account, run, log, and machine actions require the
 Nemo session boundary. The D1 binding `NEMO_DB` stores run metadata, events, and
 redacted logs. Project workloads execute only in Instabox machines. The Worker
 never receives provider credentials: it calls the bridge, which invokes the
-existing Gateway provider configuration and is restricted to the named
-Instabox node.
+existing Gateway provider configuration. Each run session is explicitly bound
+to its matching run node; the VPS cannot become a project execution target.

@@ -1,5 +1,5 @@
 const INSTABOX_ORIGIN = "https://api.instabox.sh";
-const VERSION = "0.4.0";
+const VERSION = "0.5.0";
 const MIN_CONTROL_TOKEN_LENGTH = 6;
 const MAX_RUNS_PAGE = 50;
 const WORKSPACE = "/data/home/workspace";
@@ -218,6 +218,9 @@ function runPublic(row) {
     previewPort: row.preview_port,
     previewUrl: row.preview_url,
     machineId: row.machine_id,
+    nodeName: row.node_name,
+    nodeStatus: row.node_status,
+    nodePairedAt: row.node_paired_at,
     commitSha: row.commit_sha,
     status: row.status,
     agentStatus: row.agent_status,
@@ -236,6 +239,9 @@ function runPublic(row) {
 async function updateRun(env, id, patch) {
   const allowed = new Set([
     "machine_id",
+    "node_name",
+    "node_status",
+    "node_paired_at",
     "commit_sha",
     "preview_url",
     "status",
@@ -345,6 +351,10 @@ function machineId(body) {
   );
 }
 
+function runNodeName(runId) {
+  return `nemo-run-${runId}`;
+}
+
 async function createMachine(run, env) {
   const body = await instabox("/v1/machines", env, {
     method: "POST",
@@ -377,6 +387,55 @@ async function machineCommand(env, runId, machine, cmd, timeoutSeconds = 600, op
   await appendLog(env, runId, "stdout", result?.stdout || "");
   await appendLog(env, runId, "stderr", result?.stderr || "");
   return result || {};
+}
+
+async function pairMachineNode(env, machineIdValue, nodeName, runId = null) {
+  const join = await bridgeRequest(env, "/v1/node/join", { nodeName });
+  const joinUrl = join?.joinUrl || join?.url || join?.result?.joinUrl;
+  if (typeof joinUrl !== "string") {
+    throw Object.assign(new Error("The Gateway bridge did not return a pairing URL"), {
+      code: "gateway_join_url_missing",
+      status: 502,
+    });
+  }
+  const setupCode = await fetchJoinSetupCode(env, joinUrl);
+  const command = await instabox(`/v1/machines/${encodeURIComponent(machineIdValue)}/exec`, env, {
+    method: "POST",
+    body: {
+      cmd: [
+        "set -eu",
+        "NODE_VERSION=24.16.0; NODE_DIR=\"$HOME/.local/node-v$NODE_VERSION-linux-x64\"; if [ ! -x \"$NODE_DIR/bin/node\" ]; then mkdir -p \"$HOME/.local\"; curl -fsSL \"https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz\" | tar -xJ -C \"$HOME/.local\"; fi; export PATH=\"$NODE_DIR/bin:$HOME/.local/bin:$PATH\"",
+        "npm install --prefix \"$HOME/.local\" --global openclaw@2026.9.3; OPENCLAW_BIN=\"$HOME/.local/bin/openclaw\"",
+        "TARGET_FILE=\"$HOME/.nemo-openclaw-join\"; umask 077; cat > \"$TARGET_FILE\"",
+        `nohup \"$OPENCLAW_BIN\" connect --target-file \"$TARGET_FILE\" --display-name ${shellQuote(nodeName)} > \"$HOME/.nemo-openclaw-connect.log\" 2>&1 </dev/null & echo $!`,
+      ].join("; "),
+      timeoutSeconds: 600,
+      envs: {
+        CF_ACCESS_CLIENT_ID: env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
+        CF_ACCESS_CLIENT_SECRET: env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
+      },
+      stdin: `${setupCode}\n`,
+    },
+  });
+  if (runId) {
+    await appendLog(env, runId, "node", command?.stdout || "");
+    await appendLog(env, runId, "node", command?.stderr || "");
+  }
+  if (commandFailed(command)) {
+    const detail = redact(command?.stderr || command?.stdout || "").trim().slice(-600);
+    throw Object.assign(new Error(detail || "The Instabox node client could not connect"), {
+      code: "node_connect_failed",
+      status: 502,
+    });
+  }
+  const approval = await bridgeRequest(env, "/v1/node/approve", { nodeName });
+  if (approval.approved !== true || approval.connected !== true) {
+    throw Object.assign(new Error("The Instabox run node did not become connected"), {
+      code: "node_pairing_incomplete",
+      status: 502,
+    });
+  }
+  return approval;
 }
 
 async function bridgeRequest(env, path, body) {
@@ -518,41 +577,7 @@ async function provisionNode(request, env) {
       created = true;
     }
 
-    const join = await bridgeRequest(env, "/v1/node/join", { nodeName });
-    const joinUrl = join?.joinUrl || join?.url || join?.result?.joinUrl;
-    if (typeof joinUrl !== "string") {
-      throw Object.assign(new Error(`The Gateway bridge did not return a pairing URL (${Object.keys(join || {}).join(",") || "no response fields"})`), {
-        code: "gateway_join_url_missing",
-        status: 502,
-      });
-    }
-    const setupCode = await fetchJoinSetupCode(env, joinUrl);
-    const command = await instabox(`/v1/machines/${encodeURIComponent(machine.id)}/exec`, env, {
-      method: "POST",
-      body: {
-        cmd: [
-          "set -eu",
-          "NODE_VERSION=24.16.0; NODE_DIR=\"$HOME/.local/node-v$NODE_VERSION-linux-x64\"; if [ ! -x \"$NODE_DIR/bin/node\" ]; then mkdir -p \"$HOME/.local\"; curl -fsSL \"https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz\" | tar -xJ -C \"$HOME/.local\"; fi; export PATH=\"$NODE_DIR/bin:$HOME/.local/bin:$PATH\"",
-          "npm install --prefix \"$HOME/.local\" --global openclaw@2026.9.3; OPENCLAW_BIN=\"$HOME/.local/bin/openclaw\"",
-          "TARGET_FILE=\"$HOME/.nemo-openclaw-join\"; umask 077; cat > \"$TARGET_FILE\"",
-          "nohup \"$OPENCLAW_BIN\" connect --target-file \"$TARGET_FILE\" --display-name \"Nemo Instabox\" > \"$HOME/.nemo-openclaw-connect.log\" 2>&1 </dev/null & echo $!",
-        ].join("; "),
-        timeoutSeconds: 600,
-        envs: {
-          CF_ACCESS_CLIENT_ID: env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
-          CF_ACCESS_CLIENT_SECRET: env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
-        },
-        stdin: `${setupCode}\n`,
-      },
-    });
-    if (commandFailed(command)) {
-      const detail = redact(command?.stderr || command?.stdout || "").trim().slice(-600);
-      throw Object.assign(new Error(detail || "The Instabox node client could not connect"), {
-        code: "node_connect_failed",
-        status: 502,
-      });
-    }
-    const approval = await bridgeRequest(env, "/v1/node/approve", { nodeName });
+    const approval = await pairMachineNode(env, machine.id, nodeName);
     return json(
       {
         nodeName,
@@ -599,7 +624,7 @@ async function runRemoteAgent(env, run) {
     },
     body: JSON.stringify({
       runId: run.id,
-      nodeName: env.NEMO_INSTABOX_NODE_NAME || DEFAULT_NODE_NAME,
+      nodeName: run.node_name || env.NEMO_INSTABOX_NODE_NAME || DEFAULT_NODE_NAME,
       workspace: WORKSPACE,
       repositoryUrl: run.repository_url,
       ref: run.ref_name,
@@ -651,10 +676,21 @@ async function deleteMachine(env, machine, idempotencyKey) {
   if (operation) await waitOperation(operation, env);
 }
 
+async function removeRunNode(env, runId, nodeName) {
+  if (!nodeName) return;
+  try {
+    await bridgeRequest(env, "/v1/node/remove", { nodeName });
+    await appendEvent(env, runId, "node_removed", { nodeName });
+  } catch {
+    await appendEvent(env, runId, "node_remove_failed", { nodeName });
+  }
+}
+
 async function executeRun(runId, env) {
   const run = await findRun(env, runId);
   if (!run) return;
   let machine = null;
+  let nodeName = null;
   try {
     await updateRun(env, runId, {
       status: "provisioning",
@@ -666,8 +702,19 @@ async function executeRun(runId, env) {
 
     const created = await createMachine(run, env);
     machine = created.id;
-    await updateRun(env, runId, { machine_id: machine, status: "preparing", updated_at: now() });
+    nodeName = runNodeName(run.id);
+    await updateRun(env, runId, {
+      machine_id: machine,
+      node_name: nodeName,
+      node_status: "pairing",
+      status: "preparing",
+      updated_at: now(),
+    });
     await appendEvent(env, runId, "machine_created", { machineId: machine });
+    await appendEvent(env, runId, "node_pairing_started", { nodeName });
+    await pairMachineNode(env, machine, nodeName, runId);
+    await updateRun(env, runId, { node_status: "connected", node_paired_at: now(), updated_at: now() });
+    await appendEvent(env, runId, "node_paired", { nodeName, machineId: machine });
 
     const cloneUrl = env.GITHUB_TOKEN
       ? `https://x-access-token:$GITHUB_TOKEN@github.com/${run.repository_owner}/${run.repository_name}.git`
@@ -693,7 +740,7 @@ async function executeRun(runId, env) {
     });
     await appendEvent(env, runId, "repository_ready", { commitSha });
 
-    const agent = await runRemoteAgent(env, run);
+    const agent = await runRemoteAgent(env, { ...run, node_name: nodeName });
     await appendLog(env, runId, "agent", agent.result);
     await updateRun(env, runId, { agent_status: "succeeded", status: "testing", updated_at: now() });
     await appendEvent(env, runId, "agent_completed");
@@ -739,6 +786,7 @@ async function executeRun(runId, env) {
     await appendEvent(env, runId, "run_completed", result);
 
     if (!latest?.retain_machine) {
+      await removeRunNode(env, runId, nodeName);
       await deleteMachine(env, machine, `nemo-cleanup-${runId}`);
       await appendEvent(env, runId, "machine_cleaned");
     }
@@ -763,6 +811,7 @@ async function executeRun(runId, env) {
     });
     await appendEvent(env, runId, "run_failed", { code, message: message.slice(0, 500) });
     if (machine) {
+      if (!run?.retain_machine) await removeRunNode(env, runId, nodeName);
       try {
         await deleteMachine(env, machine, `nemo-failed-cleanup-${runId}`);
         await appendEvent(env, runId, "machine_cleaned_after_failure");
@@ -906,9 +955,11 @@ async function machineAction(request, env, ctx, runId) {
     (async () => {
       try {
         if (action === "cancel" || action === "delete") {
+          await removeRunNode(env, runId, run.node_name);
           await deleteMachine(env, run.machine_id, `nemo-${action}-${runId}`);
           await updateRun(env, runId, {
             status: action === "cancel" ? "cancelled" : "cleaned",
+            node_status: "removed",
             updated_at: now(),
             completed_at: now(),
           });
@@ -996,6 +1047,7 @@ export default {
             orchestration: Boolean(env.NEMO_DB && env.INSTABOX_API_KEY),
             agentRunner: agentBridgeConfigured(env),
             gatewayBridge: agentBridgeConfigured(env),
+            perRunNodeBinding: agentBridgeConfigured(env),
             mutations: Boolean(env.NEMO_DB && env.INSTABOX_API_KEY),
           },
         },

@@ -60,20 +60,20 @@ Exit gate:
 
 ## Current status
 
-Phase 1 is complete. Phases 2 and 3 are implemented in the repository as the protected run API, D1 persistence, Instabox lifecycle adapter, command/log pipeline, preview publishing, and dashboard run controls. Activation of the Phase 3 agent path still requires the protected `NEMO_AGENT_COMMAND` runtime adapter; the Worker reports `agentRunner: false` until that secret is configured and the command is verified in the selected Instabox template.
+Phase 1 is complete. Phases 2 and 3 are implemented in the repository as the protected run API, D1 persistence, Instabox lifecycle adapter, command/log pipeline, preview publishing, and dashboard run controls. The agent path reuses the existing OpenClaw provider through the protected Gateway bridge; no provider credential is copied into Instabox.
 
 ## Gateway reuse activation
 
-The Phase 3 runtime now uses a separate Cloudflare Access-protected VPS bridge.
+The Phase 3 runtime uses a separate Cloudflare Access-protected VPS bridge.
 The bridge invokes the existing OpenClaw Gateway provider configuration through
 the local Gateway-routed CLI path; it never runs project commands on the VPS.
-The restricted `nemo` agent may use only `node_exec`, and the target node must
-be an explicitly paired Instabox node named by `NEMO_INSTABOX_NODE_NAME`.
-Provider credentials remain on the Gateway. The bridge route and agent policy
-are deployed; the remaining activation gate is pairing and verifying the
-Instabox node, then setting the protected Worker node-name binding.
+Each run receives a deterministic node name (`nemo-run-<runId>`). The Worker
+creates the Instabox machine, pairs that exact machine as an OpenClaw node,
+starts the agent in a per-run session with `/exec host=node node=<run-node>`,
+and revokes the node before deleting the machine. Provider credentials remain
+on the Gateway.
 
-The protected `POST /api/nodes/provision` flow performs that activation: it
-creates or reuses `nemo-gateway-node`, installs the OpenClaw node client,
-connects through the Access-protected Gateway URL, and approves the pending
-node. It does not transfer provider credentials to the machine.
+The protected `POST /api/nodes/provision` flow still creates or reuses the
+persistent `nemo-gateway-node` for diagnostics. It does not transfer provider
+credentials to the machine. Run execution uses separate ephemeral node
+bindings and is independent of that persistent diagnostic node.

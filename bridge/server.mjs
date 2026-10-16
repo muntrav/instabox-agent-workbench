@@ -13,6 +13,7 @@ const AGENT_TIMEOUT_SECONDS = Math.min(Math.max(Number(process.env.NEMO_AGENT_TI
 const MAX_BODY_BYTES = 128 * 1024;
 const OPENCLAW_BIN = process.env.OPENCLAW_BIN || "openclaw";
 const GATEWAY_CONFIG = process.env.OPENCLAW_CONFIG_PATH || "/opt/openclaw/config/openclaw.json";
+const NODE_NAME_PATTERN = /^(?:Nemo Instabox|nemo-run-run_[A-Za-z0-9_-]{8,80})$/;
 
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -59,7 +60,7 @@ function validRunId(value) {
 function validateRequest(body) {
   if (!body || typeof body !== "object") throw Object.assign(new Error("JSON object required"), { status: 400 });
   if (!validRunId(body.runId)) throw Object.assign(new Error("runId is invalid"), { status: 400 });
-  if (typeof body.nodeName !== "string" || body.nodeName.length < 1 || body.nodeName.length > 160)
+  if (typeof body.nodeName !== "string" || !NODE_NAME_PATTERN.test(body.nodeName))
     throw Object.assign(new Error("nodeName is required"), { status: 400 });
   if (typeof body.workspace !== "string" || !body.workspace.startsWith("/data/") || body.workspace.length > 240)
     throw Object.assign(new Error("workspace must be an Instabox /data path"), { status: 400 });
@@ -83,6 +84,7 @@ function validateRequest(body) {
 function promptFor(input) {
   return [
     "You are Nemo's isolated Instabox coding agent.",
+    `/exec host=node node=${input.nodeName}`,
     `Run ID: ${input.runId}`,
     `Target node: ${input.nodeName}`,
     `Remote workspace: ${input.workspace}`,
@@ -90,8 +92,8 @@ function promptFor(input) {
     `Ref: ${input.ref || "the checked-out ref"}`,
     "",
     "Hard execution boundary:",
-    `- Use node_exec only, and explicitly target the node named ${JSON.stringify(input.nodeName)} on every command.`,
-    "- Never use gateway_exec, exec, filesystem tools, browser tools, messaging, or any local/VPS workspace.",
+    `- Use exec only on the node named ${JSON.stringify(input.nodeName)}; the /exec directive above is mandatory placement.`,
+    "- Never use gateway-host execution, filesystem tools, browser tools, messaging, or any local/VPS workspace.",
     "- Every command must run on the Instabox node in the remote workspace above.",
     "- Do not create, modify, or delete files outside that remote workspace.",
     "- Do not expose credentials, environment variables, or tokens in your response.",
@@ -108,7 +110,18 @@ async function runAgent(prompt) {
   return new Promise((resolve) => {
     const child = spawn(
       OPENCLAW_BIN,
-      ["agent", "--agent", AGENT_ID, "--message-file", messageFile, "--json", "--timeout", String(AGENT_TIMEOUT_SECONDS)],
+      [
+        "agent",
+        "--agent",
+        AGENT_ID,
+        "--session-key",
+        `agent:${AGENT_ID}:${prompt.match(/^Run ID: (run_[A-Za-z0-9_-]+)$/m)?.[1] || "nemo-run"}`,
+        "--message-file",
+        messageFile,
+        "--json",
+        "--timeout",
+        String(AGENT_TIMEOUT_SECONDS),
+      ],
       {
         cwd: process.env.NEMO_BRIDGE_WORKDIR || "/opt/openclaw/state/agents/nemo/workspace",
         env: { ...process.env, NO_COLOR: "1" },
@@ -168,7 +181,14 @@ function runCli(args, timeoutMs = 30000) {
   });
 }
 
-async function nodeJoin(res) {
+async function nodeJoin(req, res) {
+  let nodeName = "Nemo Instabox";
+  try {
+    const body = JSON.parse(await readBody(req));
+    if (typeof body?.nodeName === "string" && NODE_NAME_PATTERN.test(body.nodeName)) nodeName = body.nodeName;
+  } catch {
+    // The persistent node uses the default name when no body is provided.
+  }
   let token = "";
   try {
     const config = JSON.parse(await readFile(GATEWAY_CONFIG, "utf8"));
@@ -189,7 +209,7 @@ async function nodeJoin(res) {
     joinUrl.protocol = "https:";
     joinUrl.host = "nemo-gateway.nywezalabs.com";
     joinUrl.search = "";
-    return json(res, 200, { joinUrl: joinUrl.toString(), nodeName: "Nemo Instabox" });
+    return json(res, 200, { joinUrl: joinUrl.toString(), nodeName });
   } catch {
     return json(res, 502, { error: "join_code_invalid" });
   }
@@ -235,6 +255,15 @@ async function nodeApprove(req, res) {
   return json(res, 504, { error: "node_pairing_timeout", nodeName: name });
 }
 
+async function nodeRemove(req, res) {
+  const body = JSON.parse(await readBody(req));
+  const name = typeof body?.nodeName === "string" ? body.nodeName : "";
+  if (!NODE_NAME_PATTERN.test(name)) return json(res, 400, { error: "node_name_invalid" });
+  const result = await runCli(["nodes", "remove", "--node", name, "--json"]);
+  if (!result.ok) return json(res, 502, { error: "node_remove_failed" });
+  return json(res, 200, { removed: true, nodeName: name });
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     return json(res, 200, {
@@ -246,13 +275,22 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/v1/node/join") {
     if (!bridgeAuthorized(req))
       return json(res, 401, { error: "access_required" });
-    return nodeJoin(res);
+    return nodeJoin(req, res);
   }
   if (req.method === "POST" && req.url === "/v1/node/approve") {
     if (!bridgeAuthorized(req))
       return json(res, 401, { error: "access_required" });
     try {
       return await nodeApprove(req, res);
+    } catch (error) {
+      return json(res, 400, { error: "invalid_request", message: error.message });
+    }
+  }
+  if (req.method === "POST" && req.url === "/v1/node/remove") {
+    if (!bridgeAuthorized(req))
+      return json(res, 401, { error: "access_required" });
+    try {
+      return await nodeRemove(req, res);
     } catch (error) {
       return json(res, 400, { error: "invalid_request", message: error.message });
     }

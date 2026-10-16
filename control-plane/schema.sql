@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS runs (
   retain_machine INTEGER NOT NULL DEFAULT 0,
   preview_url TEXT,
   machine_id TEXT,
+  node_name TEXT,
+  node_status TEXT NOT NULL DEFAULT 'pending',
+  node_paired_at TEXT,
   commit_sha TEXT,
   status TEXT NOT NULL,
   agent_status TEXT NOT NULL,
@@ -27,6 +30,11 @@ CREATE TABLE IF NOT EXISTS runs (
 
 CREATE INDEX IF NOT EXISTS runs_updated_idx ON runs(updated_at DESC);
 CREATE INDEX IF NOT EXISTS runs_status_idx ON runs(status);
+CREATE INDEX IF NOT EXISTS runs_node_idx ON runs(node_name);
+
+-- Additive migration for databases created before per-run node binding.
+-- Cloudflare D1 ignores duplicate-column failures only when applied one statement at a time;
+-- the deployment migration uses the guarded ALTER statements in control-plane/migrations/.
 
 CREATE TABLE IF NOT EXISTS run_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
