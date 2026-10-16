@@ -26,6 +26,13 @@ function redact(value) {
     .replace(/(authorization|token|secret|password|cookie|credential)[=:][^\s,}]+/gi, "$1=<redacted>");
 }
 
+function encodeSetupPayload(payload) {
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return `oc-pair://${Buffer.from(binary, "binary").toString("base64url")}`;
+}
+
 function bridgeAuthorized(req) {
   return Boolean(
     ACCESS_CLIENT_ID &&
@@ -217,10 +224,19 @@ async function nodeJoin(req, res) {
     if (typeof body.joinUrl !== "string" || body.joinUrl.length < 1)
       return json(res, 502, { error: "join_code_invalid" });
     const joinUrl = new URL(body.joinUrl);
-    joinUrl.protocol = "https:";
-    joinUrl.hostname = "nemo-gateway.nywezalabs.com";
-    joinUrl.port = "";
-    return json(res, 200, { joinUrl: joinUrl.toString(), nodeName });
+    const localPayloadResponse = await fetch(`http://127.0.0.1:18789${joinUrl.pathname}${joinUrl.search}`);
+    const payloadText = await localPayloadResponse.text();
+    const payload = JSON.parse(payloadText);
+    if (!localPayloadResponse.ok || typeof payload?.bootstrapToken !== "string")
+      return json(res, 502, { error: "join_payload_invalid" });
+    return json(res, 200, {
+      joinUrl: encodeSetupPayload({
+        url: "wss://nemo-gateway.nywezalabs.com",
+        bootstrapToken: payload.bootstrapToken,
+        expiresAtMs: payload.expiresAtMs,
+      }),
+      nodeName,
+    });
   } catch {
     return json(res, 502, { error: "join_code_invalid" });
   }
