@@ -473,7 +473,8 @@ async function bridgeRequest(env, path, body) {
   if (!response.ok || !result || typeof result !== "object") {
     throw Object.assign(
       new Error(
-        result?.message ||
+        result?.detail ||
+          result?.message ||
           result?.error ||
           `Gateway bridge returned HTTP ${response.status} (${response.headers.get("content-type") || "unknown content type"})`,
       ),
