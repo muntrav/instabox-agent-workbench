@@ -395,6 +395,7 @@ async function bridgeRequest(env, path, body) {
       "content-type": "application/json",
       "CF-Access-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
       "CF-Access-Client-Secret": env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
+      "X-Nemo-Bridge-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
     },
     body: JSON.stringify(body || {}),
   });
@@ -434,6 +435,7 @@ async function fetchJoinSetupCode(env, joinUrl) {
       Accept: "application/json",
       "CF-Access-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
       "CF-Access-Client-Secret": env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
+      "X-Nemo-Bridge-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
     },
   });
   const text = await response.text();

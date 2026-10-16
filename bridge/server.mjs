@@ -5,6 +5,7 @@ import http from "node:http";
 const HOST = process.env.NEMO_BRIDGE_HOST || "127.0.0.1";
 const PORT = Number(process.env.NEMO_BRIDGE_PORT || 18790);
 const ACCESS_CLIENT_ID = process.env.NEMO_BRIDGE_ACCESS_CLIENT_ID;
+const BRIDGE_CLIENT_HEADER = "x-nemo-bridge-client-id";
 const AGENT_ID = process.env.NEMO_OPENCLAW_AGENT_ID || "nemo";
 const AGENT_TIMEOUT_SECONDS = Math.min(Math.max(Number(process.env.NEMO_AGENT_TIMEOUT_SECONDS || 900), 30), 1800);
 const MAX_BODY_BYTES = 128 * 1024;
@@ -20,6 +21,14 @@ function redact(value) {
   return String(value || "")
     .replace(/(?:sk-|ibk_|oc-sent-v2\.)[A-Za-z0-9._:-]+/g, "<redacted>")
     .replace(/(authorization|token|secret|password|cookie|credential)[=:][^\s,}]+/gi, "$1=<redacted>");
+}
+
+function bridgeAuthorized(req) {
+  return Boolean(
+    ACCESS_CLIENT_ID &&
+      (req.headers[BRIDGE_CLIENT_HEADER] === ACCESS_CLIENT_ID ||
+        req.headers["cf-access-client-id"] === ACCESS_CLIENT_ID),
+  );
 }
 
 function readBody(req) {
@@ -213,12 +222,12 @@ const server = http.createServer(async (req, res) => {
     });
   }
   if (req.method === "POST" && req.url === "/v1/node/join") {
-    if (!ACCESS_CLIENT_ID || req.headers["cf-access-client-id"] !== ACCESS_CLIENT_ID)
+    if (!bridgeAuthorized(req))
       return json(res, 401, { error: "access_required" });
     return nodeJoin(res);
   }
   if (req.method === "POST" && req.url === "/v1/node/approve") {
-    if (!ACCESS_CLIENT_ID || req.headers["cf-access-client-id"] !== ACCESS_CLIENT_ID)
+    if (!bridgeAuthorized(req))
       return json(res, 401, { error: "access_required" });
     try {
       return await nodeApprove(req, res);
@@ -227,7 +236,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
   if (req.method !== "POST" || req.url !== "/v1/agent/turn") return json(res, 404, { error: "not_found" });
-  if (!ACCESS_CLIENT_ID || req.headers["cf-access-client-id"] !== ACCESS_CLIENT_ID)
+  if (!bridgeAuthorized(req))
     return json(res, 401, { error: "access_required" });
   try {
     const input = validateRequest(JSON.parse(await readBody(req)));
