@@ -35,6 +35,12 @@ npm run check
 npm run build
 ```
 
+## Preview deployment
+
+The GitHub `main` branch is connected to the private Cloudflare Pages project `nemo-agent-workbench`.
+The connected Pages URL is `https://nemo-agent-workbench.pages.dev`.
+This first milestone is a frontend-only shell; Instabox API actions remain behind a protected control-plane boundary.
+
 ## Runtime boundary
 
 The current dashboard is a frontend-only preview. Dynamic Instabox and GitHub calls must be added through a protected
