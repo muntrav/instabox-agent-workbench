@@ -662,7 +662,7 @@ function testCommand() {
     "elif [ -f pyproject.toml ]; then pytest -q;",
     "elif [ -f Cargo.toml ]; then cargo test;",
     "else echo 'No recognized test command; recording a skipped test.'; fi",
-  ].join(" ");
+  ].join("; ");
 }
 
 async function publishPreview(env, run) {
