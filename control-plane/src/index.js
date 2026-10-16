@@ -413,6 +413,37 @@ async function bridgeRequest(env, path, body) {
   return result || {};
 }
 
+function encodeSetupPayload(payload) {
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return `oc-pair://${btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "")}`;
+}
+
+async function fetchJoinSetupCode(env, joinUrl) {
+  const response = await fetch(joinUrl, {
+    headers: {
+      Accept: "application/json",
+      "CF-Access-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
+      "CF-Access-Client-Secret": env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
+    },
+  });
+  const text = await response.text();
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = null;
+  }
+  if (!response.ok || !payload || typeof payload !== "object") {
+    throw Object.assign(new Error("The Gateway pairing payload could not be fetched"), {
+      code: "gateway_join_payload_failed",
+      status: response.status || 502,
+    });
+  }
+  return encodeSetupPayload(payload);
+}
+
 function machineRows(body) {
   if (Array.isArray(body)) return body;
   return Array.isArray(body?.machines) ? body.machines : Array.isArray(body?.results) ? body.results : [];
@@ -463,6 +494,7 @@ async function provisionNode(request, env) {
     }
 
     const join = await bridgeRequest(env, "/v1/node/join", { nodeName });
+    const setupCode = await fetchJoinSetupCode(env, join.joinUrl);
     const command = await instabox(`/v1/machines/${encodeURIComponent(machine.id)}/exec`, env, {
       method: "POST",
       body: {
@@ -478,7 +510,7 @@ async function provisionNode(request, env) {
           CF_ACCESS_CLIENT_ID: env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
           CF_ACCESS_CLIENT_SECRET: env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
         },
-        stdin: `${join.joinUrl}\n`,
+        stdin: `${setupCode}\n`,
       },
     });
     if (commandFailed(command)) {
