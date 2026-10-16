@@ -154,6 +154,36 @@
           }
         }
       }
+    },
+    "/api/nodes/provision": {
+      "post": {
+        "operationId": "provisionInstaboxNode",
+        "summary": "Create and pair the persistent Nemo Instabox node",
+        "description": "Creates or reuses nemo-gateway-node, connects it through the protected OpenClaw Gateway bridge, and approves the pending node.",
+        "security": [
+          {
+            "NemoBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The node is connected and paired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeProvisionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/RuntimeUnavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -443,6 +473,17 @@
           "nextCursor": {
             "type": ["string", "null"]
           }
+        }
+      },
+      "NodeProvisionResponse": {
+        "type": "object",
+        "required": ["nodeName", "machineId", "machineName", "paired", "created"],
+        "properties": {
+          "nodeName": { "type": "string" },
+          "machineId": { "type": "string" },
+          "machineName": { "type": "string" },
+          "paired": { "type": "boolean" },
+          "created": { "type": "boolean" }
         }
       }
     }

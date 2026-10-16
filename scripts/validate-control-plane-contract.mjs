@@ -9,6 +9,7 @@ const requiredPaths = [
   "/api/runs/{runId}",
   "/api/runs/{runId}/logs",
   "/api/runs/{runId}/actions",
+  "/api/nodes/provision",
 ];
 const requiredOperations = [
   "getHealth",
@@ -18,6 +19,7 @@ const requiredOperations = [
   "getRun",
   "getRunLogs",
   "runMachineAction",
+  "provisionInstaboxNode",
 ];
 
 if (contract.openapi !== "3.1.0") throw new Error("Expected an OpenAPI 3.1 contract.");

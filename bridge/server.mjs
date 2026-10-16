@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import http from "node:http";
 
 const HOST = process.env.NEMO_BRIDGE_HOST || "127.0.0.1";
@@ -8,6 +9,7 @@ const AGENT_ID = process.env.NEMO_OPENCLAW_AGENT_ID || "nemo";
 const AGENT_TIMEOUT_SECONDS = Math.min(Math.max(Number(process.env.NEMO_AGENT_TIMEOUT_SECONDS || 900), 30), 1800);
 const MAX_BODY_BYTES = 128 * 1024;
 const OPENCLAW_BIN = process.env.OPENCLAW_BIN || "openclaw";
+const GATEWAY_CONFIG = process.env.OPENCLAW_CONFIG_PATH || "/opt/openclaw/config/openclaw.json";
 
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -127,6 +129,81 @@ function runAgent(prompt) {
   });
 }
 
+function runCli(args, timeoutMs = 30000) {
+  return new Promise((resolve) => {
+    const child = spawn(OPENCLAW_BIN, args, {
+      cwd: process.env.NEMO_BRIDGE_WORKDIR || "/opt/openclaw/state/agents/nemo/workspace",
+      env: { ...process.env, NO_COLOR: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => child.kill("SIGTERM"), timeoutMs);
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", (error) => { clearTimeout(timer); resolve({ ok: false, error: redact(error.message) }); });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({ ok: code === 0, code, stdout, stderr: redact(stderr) });
+    });
+  });
+}
+
+async function nodeJoin(res) {
+  let token = "";
+  try {
+    const config = JSON.parse(await readFile(GATEWAY_CONFIG, "utf8"));
+    token = typeof config?.gateway?.auth?.token === "string" ? config.gateway.auth.token : "";
+  } catch {
+    return json(res, 503, { error: "gateway_auth_unavailable" });
+  }
+  if (!token) return json(res, 503, { error: "gateway_auth_unavailable" });
+  const result = await runCli(["devices", "join-code", "--json", "--token", token]);
+  if (!result.ok) return json(res, 502, { error: "join_code_failed" });
+  try {
+    const body = JSON.parse(result.stdout.trim());
+    if (typeof body.joinUrl !== "string")
+      return json(res, 502, { error: "join_code_invalid" });
+    const joinUrl = new URL(body.joinUrl);
+    if (joinUrl.pathname === "/" || !joinUrl.pathname.startsWith("/j/"))
+      return json(res, 502, { error: "join_code_invalid" });
+    joinUrl.protocol = "https:";
+    joinUrl.host = "nemo-gateway.nywezalabs.com";
+    joinUrl.search = "";
+    return json(res, 200, { joinUrl: joinUrl.toString(), nodeName: "Nemo Instabox" });
+  } catch {
+    return json(res, 502, { error: "join_code_invalid" });
+  }
+}
+
+async function nodeApprove(req, res) {
+  const body = JSON.parse(await readBody(req));
+  const name = typeof body?.nodeName === "string" ? body.nodeName : "Nemo Instabox";
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const pending = await runCli(["nodes", "pending", "--json"]);
+    if (pending.ok) {
+      try {
+        const rows = JSON.parse(pending.stdout.trim());
+        const candidates = Array.isArray(rows) ? rows : rows.pending || [];
+        const match = candidates.find((row) => {
+          const label = row.displayName || row.name || row.nodeName || row.device?.displayName || "";
+          return label === name || !name;
+        });
+        if (match?.requestId) {
+          const approved = await runCli(["nodes", "approve", match.requestId]);
+          if (approved.ok) return json(res, 200, { approved: true, nodeName: name });
+        }
+      } catch {
+        // Continue polling while the node host completes its first handshake.
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  return json(res, 504, { error: "node_pairing_timeout", nodeName: name });
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     return json(res, 200, {
@@ -134,6 +211,20 @@ const server = http.createServer(async (req, res) => {
       agent: AGENT_ID,
       accessConfigured: Boolean(ACCESS_CLIENT_ID),
     });
+  }
+  if (req.method === "POST" && req.url === "/v1/node/join") {
+    if (!ACCESS_CLIENT_ID || req.headers["cf-access-client-id"] !== ACCESS_CLIENT_ID)
+      return json(res, 401, { error: "access_required" });
+    return nodeJoin(res);
+  }
+  if (req.method === "POST" && req.url === "/v1/node/approve") {
+    if (!ACCESS_CLIENT_ID || req.headers["cf-access-client-id"] !== ACCESS_CLIENT_ID)
+      return json(res, 401, { error: "access_required" });
+    try {
+      return await nodeApprove(req, res);
+    } catch (error) {
+      return json(res, 400, { error: "invalid_request", message: error.message });
+    }
   }
   if (req.method !== "POST" || req.url !== "/v1/agent/turn") return json(res, 404, { error: "not_found" });
   if (!ACCESS_CLIENT_ID || req.headers["cf-access-client-id"] !== ACCESS_CLIENT_ID)

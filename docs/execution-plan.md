@@ -72,3 +72,8 @@ be an explicitly paired Instabox node named by `NEMO_INSTABOX_NODE_NAME`.
 Provider credentials remain on the Gateway. The bridge route and agent policy
 are deployed; the remaining activation gate is pairing and verifying the
 Instabox node, then setting the protected Worker node-name binding.
+
+The protected `POST /api/nodes/provision` flow performs that activation: it
+creates or reuses `nemo-gateway-node`, installs the OpenClaw node client,
+connects through the Access-protected Gateway URL, and approves the pending
+node. It does not transfer provider credentials to the machine.

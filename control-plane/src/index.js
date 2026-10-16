@@ -111,6 +111,17 @@ function agentBridgeConfigured(env) {
   );
 }
 
+function bridgeCredentialsConfigured(env) {
+  return Boolean(
+    typeof env.NEMO_AGENT_BRIDGE_URL === "string" &&
+      env.NEMO_AGENT_BRIDGE_URL.startsWith("https://") &&
+      typeof env.NEMO_BRIDGE_ACCESS_CLIENT_ID === "string" &&
+      env.NEMO_BRIDGE_ACCESS_CLIENT_ID.length > 10 &&
+      typeof env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET === "string" &&
+      env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET.length > 10,
+  );
+}
+
 function githubRepository(value) {
   try {
     const url = new URL(value);
@@ -361,6 +372,142 @@ async function machineCommand(env, runId, machine, cmd, timeoutSeconds = 600, op
   await appendLog(env, runId, "stdout", result?.stdout || "");
   await appendLog(env, runId, "stderr", result?.stderr || "");
   return result || {};
+}
+
+async function bridgeRequest(env, path, body) {
+  if (!bridgeCredentialsConfigured(env)) {
+    throw Object.assign(new Error("The OpenClaw Gateway bridge is not configured"), {
+      code: "gateway_bridge_not_configured",
+      status: 503,
+    });
+  }
+  const response = await fetch(`${env.NEMO_AGENT_BRIDGE_URL.replace(/\/$/, "")}${path}`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "content-type": "application/json",
+      "CF-Access-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
+      "CF-Access-Client-Secret": env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
+    },
+    body: JSON.stringify(body || {}),
+  });
+  const text = await response.text();
+  let result = null;
+  try {
+    result = text ? JSON.parse(text) : null;
+  } catch {
+    result = null;
+  }
+  if (!response.ok) {
+    throw Object.assign(new Error(result?.message || result?.error || "Gateway bridge request failed"), {
+      code: result?.error || "gateway_bridge_failed",
+      status: response.status || 502,
+    });
+  }
+  return result || {};
+}
+
+function machineRows(body) {
+  if (Array.isArray(body)) return body;
+  return Array.isArray(body?.machines) ? body.machines : Array.isArray(body?.results) ? body.results : [];
+}
+
+function commandFailed(result) {
+  const code = result?.exitCode ?? result?.code ?? result?.statusCode;
+  return (code !== undefined && code !== null && Number(code) !== 0) || result?.status === "failed";
+}
+
+async function provisionNode(request, env) {
+  if (!env.INSTABOX_API_KEY)
+    return errorResponse("instabox_key_not_configured", 503, request, env, {
+      message: "Instabox write access is not configured.",
+    });
+  if (!bridgeCredentialsConfigured(env))
+    return errorResponse("gateway_bridge_not_configured", 503, request, env, {
+      message: "The protected OpenClaw Gateway bridge is not configured.",
+    });
+
+  const nodeName = "Nemo Instabox";
+  const machineName = "nemo-gateway-node";
+  let machine = null;
+  let created = false;
+  try {
+    const existing = machineRows(await instabox("/v1/machines?limit=100", env)).find(
+      (item) => item?.name === machineName || item?.metadata?.role === "nemo-gateway-node",
+    );
+    if (existing?.id) {
+      machine = existing;
+    } else {
+      const createdBody = await instabox("/v1/machines", env, {
+        method: "POST",
+        idempotencyKey: "nemo-gateway-node-v1",
+        body: {
+          name: machineName,
+          templateId: "universal",
+          timeoutSeconds: 86400,
+          metadata: { role: "nemo-gateway-node", nodeName },
+          vault: false,
+        },
+      });
+      const operation = operationId(createdBody) ? await waitOperation(operationId(createdBody), env) : createdBody;
+      const id = machineId(createdBody) || machineId(operation);
+      if (!id) throw Object.assign(new Error("Instabox did not return a node machine ID"), { status: 502 });
+      machine = { id, name: machineName };
+      created = true;
+    }
+
+    const join = await bridgeRequest(env, "/v1/node/join", { nodeName });
+    const command = await instabox(`/v1/machines/${encodeURIComponent(machine.id)}/exec`, env, {
+      method: "POST",
+      body: {
+        cmd: [
+          "set -eu",
+          "command -v openclaw >/dev/null 2>&1 || npm install --global openclaw@2026.9.3",
+          "openclaw connect \"$NEMO_JOIN_URL\" --service --display-name \"$NEMO_NODE_NAME\"",
+        ].join("; "),
+        timeoutSeconds: 600,
+        envs: {
+          NEMO_JOIN_URL: join.joinUrl,
+          NEMO_NODE_NAME: nodeName,
+          CF_ACCESS_CLIENT_ID: env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
+          CF_ACCESS_CLIENT_SECRET: env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
+        },
+      },
+    });
+    if (commandFailed(command)) {
+      throw Object.assign(new Error("The Instabox node client could not connect"), {
+        code: "node_connect_failed",
+        status: 502,
+      });
+    }
+    const approval = await bridgeRequest(env, "/v1/node/approve", { nodeName });
+    return json(
+      {
+        nodeName,
+        machineId: machine.id,
+        machineName,
+        paired: approval.approved === true,
+        created,
+      },
+      200,
+      request,
+      env,
+    );
+  } catch (error) {
+    if (created && machine?.id) {
+      try {
+        await instabox(`/v1/machines/${encodeURIComponent(machine.id)}`, env, {
+          method: "DELETE",
+          idempotencyKey: "nemo-gateway-node-cleanup-v1",
+        });
+      } catch {
+        // Preserve the original provisioning error; cleanup can be retried from the machine list.
+      }
+    }
+    return errorResponse(error.code || "node_provision_failed", error.status || 502, request, env, {
+      message: redact(error.message),
+    });
+  }
 }
 
 async function runRemoteAgent(env, run) {
@@ -790,6 +937,7 @@ export default {
     if (auth && url.pathname.startsWith("/api/")) return auth;
 
     if (url.pathname === "/api/overview" && request.method === "GET") return overview(request, env);
+    if (url.pathname === "/api/nodes/provision" && request.method === "POST") return provisionNode(request, env);
     if (url.pathname === "/api/runs" && request.method === "GET") return listRuns(request, env);
     if (url.pathname === "/api/runs" && request.method === "POST") return createRun(request, env, ctx);
 
