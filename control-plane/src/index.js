@@ -369,7 +369,7 @@ async function createMachine(run, env) {
     body: {
       name: `nemo-${run.id.replaceAll("_", "-").slice(-24)}`,
       templateId: run.template_id,
-      timeoutSeconds: 3600,
+      timeoutSeconds: 600,
       metadata: { nemoRun: run.id, repository: run.repository_name || "github" },
       vault: false,
     },
@@ -572,7 +572,7 @@ async function provisionNode(request, env) {
         body: {
           name: machineName,
           templateId: "universal",
-          timeoutSeconds: 86400,
+          timeoutSeconds: 600,
           metadata: { role: "nemo-gateway-node", nodeName },
           vault: false,
         },
