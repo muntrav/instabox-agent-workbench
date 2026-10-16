@@ -528,18 +528,10 @@ async function fetchJoinSetupCode(env, joinUrl) {
   publicGateway.search = "";
   publicGateway.hash = "";
   const publicGatewayUrl = publicGateway.toString().replace(/\/$/, "");
-  const normalizedPayload = {
+  return encodeSetupPayload({
     url: publicGatewayUrl,
-    urls: [publicGatewayUrl],
     bootstrapToken: payload.bootstrapToken,
-  };
-  if (Number.isSafeInteger(payload.expiresAtMs) && payload.expiresAtMs > Date.now()) {
-    normalizedPayload.expiresAtMs = payload.expiresAtMs;
-  }
-  if (typeof payload.tlsFingerprint === "string" && payload.tlsFingerprint.length > 0) {
-    normalizedPayload.tlsFingerprint = payload.tlsFingerprint;
-  }
-  return encodeSetupPayload(normalizedPayload);
+  });
 }
 
 function machineRows(body) {
