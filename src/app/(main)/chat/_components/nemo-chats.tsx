@@ -23,19 +23,13 @@ import {
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Bubble, BubbleContent, BubbleGroup } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group";
-import { Message, MessageAvatar, MessageContent, MessageFooter } from "@/components/ui/message";
-import {
-  MessageScroller,
-  MessageScrollerContent,
-  MessageScrollerProvider,
-  MessageScrollerViewport,
-} from "@/components/ui/message-scroller";
 import { Separator } from "@/components/ui/separator";
 import { CONTROL_PLANE_ORIGIN } from "@/config/control-plane";
+
+import { VercelMessageThread } from "./vercel-message-thread";
 
 type ChatSummary = {
   id: string;
@@ -342,46 +336,7 @@ export function NemoChats() {
                 </div>
                 <Badge variant={activeRun(detail.run) ? "secondary" : "outline"}>{detail.run.status}</Badge>
               </header>
-              <MessageScrollerProvider autoScroll>
-                <MessageScroller className="min-h-0 flex-1">
-                  <MessageScrollerViewport>
-                    <MessageScrollerContent className="gap-5 px-4 py-6 md:px-8">
-                      {detail.messages.map((message) => {
-                        const outbound = message.role === "user";
-                        let bubbleVariant: "default" | "destructive" | "muted" = "muted";
-                        if (outbound) bubbleVariant = "default";
-                        if (message.kind === "error") bubbleVariant = "destructive";
-                        return (
-                          <Message align={outbound ? "end" : "start"} key={message.id}>
-                            <MessageAvatar>
-                              <Avatar className="size-8">
-                                <AvatarFallback
-                                  className={cn("text-xs", outbound && "bg-primary text-primary-foreground")}
-                                >
-                                  {outbound ? "You" : "N"}
-                                </AvatarFallback>
-                              </Avatar>
-                            </MessageAvatar>
-                            <MessageContent>
-                              <BubbleGroup>
-                                <Bubble align={outbound ? "end" : "start"} variant={bubbleVariant}>
-                                  <BubbleContent className="whitespace-pre-wrap">{message.content}</BubbleContent>
-                                </Bubble>
-                              </BubbleGroup>
-                              <MessageFooter>{new Date(message.createdAt).toLocaleString()}</MessageFooter>
-                            </MessageContent>
-                          </Message>
-                        );
-                      })}
-                      {sending ? (
-                        <div className="flex items-center gap-2 px-10 text-muted-foreground text-sm">
-                          <LoaderCircle className="size-4 animate-spin" /> Nemo is working in Instabox…
-                        </div>
-                      ) : null}
-                    </MessageScrollerContent>
-                  </MessageScrollerViewport>
-                </MessageScroller>
-              </MessageScrollerProvider>
+              <VercelMessageThread messages={detail.messages} sending={sending} />
               <div className="border-t p-3 md:p-4">
                 <form onSubmit={sendMessage}>
                   <InputGroup className="bg-background">
