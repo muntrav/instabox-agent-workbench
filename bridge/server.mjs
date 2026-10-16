@@ -85,10 +85,31 @@ function validateRequest(body) {
     task: body.task.trim(),
     repositoryUrl: body.repositoryUrl,
     ref: typeof body.ref === "string" ? body.ref.slice(0, 160) : "",
+    mode: body.mode === "chat" ? "chat" : "run",
   };
 }
 
 function promptFor(input) {
+  if (input.mode === "chat") {
+    return [
+      "You are continuing Nemo's isolated Instabox coding-agent conversation.",
+      `/exec host=node node=${input.nodeName}`,
+      `Run ID: ${input.runId}`,
+      `Target node: ${input.nodeName}`,
+      `Remote workspace: ${input.workspace}`,
+      `Repository: ${input.repositoryUrl}`,
+      `Ref: ${input.ref || "the checked-out ref"}`,
+      "",
+      "Hard execution boundary:",
+      `- Use exec only on the node named ${JSON.stringify(input.nodeName)}; the /exec directive above is mandatory placement.`,
+      "- Never use gateway-host execution, filesystem tools, browser tools, messaging, or any local/VPS workspace.",
+      "- Every command must run on the Instabox node in the remote workspace above.",
+      "- Do not expose credentials, environment variables, or tokens in your response.",
+      "",
+      "Answer the user's follow-up in the existing run context. Inspect or modify the repository when needed, run relevant checks, and report what changed or what is blocked.",
+      `User follow-up: ${input.task}`,
+    ].join("\n");
+  }
   return [
     "You are Nemo's isolated Instabox coding agent.",
     `/exec host=node node=${input.nodeName}`,
@@ -146,7 +167,9 @@ async function runAgent(prompt) {
       stderr += chunk;
     });
     const finish = (result) => {
-      rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      rm(tempDir, { recursive: true, force: true }).catch(() => {
+        // Best-effort cleanup of the private prompt file.
+      });
       resolve(result);
     };
     child.on("error", (error) => finish({ ok: false, error: redact(error.message) }));
@@ -183,9 +206,16 @@ function runCli(args, timeoutMs = 30000) {
     const timer = setTimeout(() => child.kill("SIGTERM"), timeoutMs);
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", (error) => { clearTimeout(timer); resolve({ ok: false, error: redact(error.message) }); });
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      resolve({ ok: false, error: redact(error.message) });
+    });
     child.on("close", (code) => {
       clearTimeout(timer);
       resolve({ ok: code === 0, code, stdout, stderr: redact(stderr) });
@@ -209,15 +239,7 @@ async function nodeJoin(req, res) {
     return json(res, 503, { error: "gateway_auth_unavailable" });
   }
   if (!token) return json(res, 503, { error: "gateway_auth_unavailable" });
-  const result = await runCli([
-    "devices",
-    "join-code",
-    "--json",
-    "--url",
-    "ws://127.0.0.1:18789",
-    "--token",
-    token,
-  ]);
+  const result = await runCli(["devices", "join-code", "--json", "--url", "ws://127.0.0.1:18789", "--token", token]);
   if (!result.ok) return json(res, 502, { error: "join_code_failed", detail: redact(result.stderr).slice(-400) });
   try {
     const body = JSON.parse(result.stdout.trim());
@@ -300,13 +322,11 @@ const server = http.createServer(async (req, res) => {
     });
   }
   if (req.method === "POST" && req.url === "/v1/node/join") {
-    if (!bridgeAuthorized(req))
-      return json(res, 401, { error: "access_required" });
+    if (!bridgeAuthorized(req)) return json(res, 401, { error: "access_required" });
     return nodeJoin(req, res);
   }
   if (req.method === "POST" && req.url === "/v1/node/approve") {
-    if (!bridgeAuthorized(req))
-      return json(res, 401, { error: "access_required" });
+    if (!bridgeAuthorized(req)) return json(res, 401, { error: "access_required" });
     try {
       return await nodeApprove(req, res);
     } catch (error) {
@@ -314,8 +334,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
   if (req.method === "POST" && req.url === "/v1/node/remove") {
-    if (!bridgeAuthorized(req))
-      return json(res, 401, { error: "access_required" });
+    if (!bridgeAuthorized(req)) return json(res, 401, { error: "access_required" });
     try {
       return await nodeRemove(req, res);
     } catch (error) {
@@ -323,8 +342,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
   if (req.method !== "POST" || req.url !== "/v1/agent/turn") return json(res, 404, { error: "not_found" });
-  if (!bridgeAuthorized(req))
-    return json(res, 401, { error: "access_required" });
+  if (!bridgeAuthorized(req)) return json(res, 401, { error: "access_required" });
   try {
     const input = validateRequest(JSON.parse(await readBody(req)));
     const result = await runAgent(promptFor(input));

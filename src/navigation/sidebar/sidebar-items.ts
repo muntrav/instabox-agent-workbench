@@ -1,4 +1,4 @@
-import { Activity, Box, CirclePlay, GitBranch, type LucideIcon, Server, Settings2 } from "lucide-react";
+import { Activity, Box, CirclePlay, GitBranch, type LucideIcon, MessageCircle, Server, Settings2 } from "lucide-react";
 
 export type NavBadge = "new" | "soon";
 
@@ -46,6 +46,7 @@ export const sidebarItems: NavGroup[] = [
       { id: "overview", title: "Overview", url: "/dashboard/default", icon: Activity },
       { id: "machines", title: "Machines", url: "/dashboard/default#machines", icon: Server },
       { id: "runs", title: "Runs", url: "/dashboard/default#runs", icon: CirclePlay },
+      { id: "chats", title: "Chats", url: "/chat", icon: MessageCircle },
       { id: "repositories", title: "Repositories", url: "/dashboard/default#repositories", icon: GitBranch },
     ],
   },

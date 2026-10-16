@@ -98,7 +98,10 @@ function redact(value) {
   return String(value || "")
     .replace(/ibk_[A-Za-z0-9_-]+/g, "ibk_[redacted]")
     .replace(/(ghp_|github_pat_|sk-|cf_)[A-Za-z0-9_-]+/g, "$1[redacted]")
-    .replace(/https:\/\/nemo-gateway\.nywezalabs\.com\/j\/[A-Za-z0-9_-]+/g, "https://nemo-gateway.nywezalabs.com/j/[redacted]")
+    .replace(
+      /https:\/\/nemo-gateway\.nywezalabs\.com\/j\/[A-Za-z0-9_-]+/g,
+      "https://nemo-gateway.nywezalabs.com/j/[redacted]",
+    )
     .replace(/Bearer\s+[A-Za-z0-9._~-]+/gi, "Bearer [redacted]");
 }
 
@@ -203,6 +206,85 @@ function dbRequired(env) {
 async function findRun(env, id) {
   const result = await dbRequired(env).prepare("SELECT * FROM runs WHERE id = ?1").bind(id).first();
   return result || null;
+}
+
+async function findChat(env, id) {
+  const result = await dbRequired(env)
+    .prepare(
+      "SELECT c.*, r.status AS run_status, r.machine_id, r.node_name, r.repository_name, r.ref_name, r.task, r.preview_url FROM chats c JOIN runs r ON r.id = c.run_id WHERE c.id = ?1",
+    )
+    .bind(id)
+    .first();
+  return result || null;
+}
+
+async function findChatForRun(env, runId) {
+  const result = await dbRequired(env).prepare("SELECT * FROM chats WHERE run_id = ?1").bind(runId).first();
+  return result || null;
+}
+
+function chatPublic(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    runId: row.run_id,
+    title: row.title,
+    status: row.status,
+    runStatus: row.run_status || null,
+    machineId: row.machine_id || null,
+    nodeName: row.node_name || null,
+    repositoryName: row.repository_name || null,
+    ref: row.ref_name || null,
+    task: row.task || null,
+    previewUrl: row.preview_url || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function messagePublic(row) {
+  let metadata = null;
+  try {
+    metadata = row.metadata_json ? JSON.parse(row.metadata_json) : null;
+  } catch {
+    metadata = null;
+  }
+  return {
+    id: row.id,
+    role: row.role,
+    content: row.content,
+    kind: row.kind,
+    metadata,
+    createdAt: row.created_at,
+  };
+}
+
+async function listChatMessages(env, chatId, limit = 200) {
+  const result = await dbRequired(env)
+    .prepare(
+      "SELECT id, role, content, kind, metadata_json, created_at FROM chat_messages WHERE chat_id = ?1 ORDER BY id DESC LIMIT ?2",
+    )
+    .bind(chatId, Math.min(Math.max(limit, 1), 500))
+    .all();
+  return (result.results || []).reverse().map(messagePublic);
+}
+
+async function appendChatMessage(env, chatId, role, content, kind = "message", metadata = null) {
+  const timestamp = now();
+  await dbRequired(env)
+    .prepare(
+      "INSERT INTO chat_messages (chat_id, role, content, kind, metadata_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+    )
+    .bind(chatId, role, redact(content).slice(0, 20000), kind, metadata ? JSON.stringify(metadata) : null, timestamp)
+    .run();
+  await dbRequired(env).prepare("UPDATE chats SET updated_at = ?1 WHERE id = ?2").bind(timestamp, chatId).run();
+}
+
+async function deleteChatForRun(env, runId) {
+  const chat = await findChatForRun(env, runId);
+  if (!chat) return false;
+  await dbRequired(env).prepare("DELETE FROM chats WHERE id = ?1").bind(chat.id).run();
+  return true;
 }
 
 function runPublic(row) {
@@ -315,11 +397,18 @@ async function instabox(path, env, options = {}) {
   }
   if (!response.ok) {
     const providerMessage = body?.message || body?.error?.message || body?.error || body?.raw;
-    throw Object.assign(new Error(providerMessage ? `Instabox request failed: ${providerMessage}` : `Instabox request failed with HTTP ${response.status}`), {
-      status: response.status,
-      code: body?.code || "instabox_error",
-      body,
-    });
+    throw Object.assign(
+      new Error(
+        providerMessage
+          ? `Instabox request failed: ${providerMessage}`
+          : `Instabox request failed with HTTP ${response.status}`,
+      ),
+      {
+        status: response.status,
+        code: body?.code || "instabox_error",
+        body,
+      },
+    );
   }
   return body;
 }
@@ -395,7 +484,9 @@ async function machineCommand(env, runId, machine, cmd, timeoutSeconds = 600, op
   await appendLog(env, runId, "stderr", result?.stderr || "");
   if (!options.allowFailure && commandFailed(result)) {
     const exitCode = Number(result?.exitCode ?? result?.code ?? result?.statusCode);
-    const detail = redact(result?.stderr || result?.stdout || "").trim().slice(-1200);
+    const detail = redact(result?.stderr || result?.stdout || "")
+      .trim()
+      .slice(-1200);
     const label = options.label || "Instabox command";
     throw Object.assign(new Error(detail ? `${label} failed: ${detail}` : `${label} failed`), {
       code: options.errorCode || "machine_command_failed",
@@ -431,10 +522,10 @@ async function pairMachineNode(env, machineIdValue, nodeName, runId = null) {
     body: {
       cmd: [
         "set -eu",
-        "NODE_VERSION=24.16.0; NODE_DIR=\"$HOME/.local/node-v$NODE_VERSION-linux-x64\"; if [ ! -x \"$NODE_DIR/bin/node\" ]; then mkdir -p \"$HOME/.local\"; curl -fsSL \"https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz\" | tar -xJ -C \"$HOME/.local\"; fi; export PATH=\"$NODE_DIR/bin:$HOME/.local/bin:$PATH\"",
-        "npm install --prefix \"$HOME/.local\" --global openclaw@2026.9.3; OPENCLAW_BIN=\"$HOME/.local/bin/openclaw\"",
-        "TARGET_FILE=\"$HOME/.nemo-openclaw-join\"; umask 077; cat > \"$TARGET_FILE\"",
-        `nohup \"$OPENCLAW_BIN\" connect --target-file \"$TARGET_FILE\" --display-name ${shellQuote(nodeName)} > \"$HOME/.nemo-openclaw-connect.log\" 2>&1 </dev/null & echo $!`,
+        'NODE_VERSION=24.16.0; NODE_DIR="$HOME/.local/node-v$NODE_VERSION-linux-x64"; if [ ! -x "$NODE_DIR/bin/node" ]; then mkdir -p "$HOME/.local"; curl -fsSL "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz" | tar -xJ -C "$HOME/.local"; fi; export PATH="$NODE_DIR/bin:$HOME/.local/bin:$PATH"',
+        'npm install --prefix "$HOME/.local" --global openclaw@2026.9.3; OPENCLAW_BIN="$HOME/.local/bin/openclaw"',
+        'TARGET_FILE="$HOME/.nemo-openclaw-join"; umask 077; cat > "$TARGET_FILE"',
+        `nohup "$OPENCLAW_BIN" connect --target-file "$TARGET_FILE" --display-name ${shellQuote(nodeName)} > "$HOME/.nemo-openclaw-connect.log" 2>&1 </dev/null & echo $!`,
       ].join("; "),
       timeoutSeconds: 600,
       envs: {
@@ -449,7 +540,9 @@ async function pairMachineNode(env, machineIdValue, nodeName, runId = null) {
     await appendLog(env, runId, "node", command?.stderr || "");
   }
   if (commandFailed(command)) {
-    const detail = redact(command?.stderr || command?.stdout || "").trim().slice(-600);
+    const detail = redact(command?.stderr || command?.stdout || "")
+      .trim()
+      .slice(-600);
     throw Object.assign(new Error(detail || "The Instabox node client could not connect"), {
       code: "node_connect_failed",
       status: 502,
@@ -501,63 +594,18 @@ async function bridgeRequest(env, path, body) {
       ),
       {
         code: result?.error || "gateway_bridge_failed",
-      status: response.status || 502,
+        status: response.status || 502,
       },
     );
   }
   return result || {};
 }
 
-function encodeSetupPayload(payload) {
-  const bytes = new TextEncoder().encode(JSON.stringify(payload));
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return `oc-pair://${btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "")}`;
-}
-
-async function fetchJoinSetupCode(env, joinUrl) {
-  const response = await fetch(joinUrl, {
-    headers: {
-      Accept: "application/json",
-      "CF-Access-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
-      "CF-Access-Client-Secret": env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
-      "X-Nemo-Bridge-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
-    },
-  });
-  const text = await response.text();
-  let payload = null;
-  try {
-    payload = text ? JSON.parse(text) : null;
-  } catch {
-    payload = null;
-  }
-  if (!response.ok || !payload || typeof payload !== "object") {
-    throw Object.assign(new Error("The Gateway pairing payload could not be fetched"), {
-      code: "gateway_join_payload_failed",
-      status: response.status || 502,
-    });
-  }
-  if (typeof payload.bootstrapToken !== "string" || payload.bootstrapToken.length < 1) {
-    throw Object.assign(new Error(`The Gateway pairing payload is missing bootstrapToken (fields: ${Object.keys(payload).join(",") || "none"})`), {
-      code: "gateway_join_payload_invalid",
-      status: 502,
-    });
-  }
-  const publicGateway = new URL(joinUrl);
-  publicGateway.protocol = "wss:";
-  publicGateway.pathname = "/";
-  publicGateway.search = "";
-  publicGateway.hash = "";
-  const publicGatewayUrl = publicGateway.toString().replace(/\/$/, "");
-  return encodeSetupPayload({
-    url: publicGatewayUrl,
-    bootstrapToken: payload.bootstrapToken,
-  });
-}
-
 function machineRows(body) {
   if (Array.isArray(body)) return body;
-  return Array.isArray(body?.machines) ? body.machines : Array.isArray(body?.results) ? body.results : [];
+  if (Array.isArray(body?.machines)) return body.machines;
+  if (Array.isArray(body?.results)) return body.results;
+  return [];
 }
 
 function commandFailed(result) {
@@ -634,7 +682,7 @@ async function provisionNode(request, env) {
   }
 }
 
-async function runRemoteAgent(env, run) {
+async function runRemoteAgent(env, run, options = {}) {
   if (!agentBridgeConfigured(env)) {
     throw Object.assign(new Error("The OpenClaw Gateway bridge is not configured"), {
       code: "agent_bridge_not_configured",
@@ -656,7 +704,8 @@ async function runRemoteAgent(env, run) {
       workspace: WORKSPACE,
       repositoryUrl: run.repository_url,
       ref: run.ref_name,
-      task: run.task,
+      task: options.task || run.task,
+      mode: options.mode || "run",
     }),
   });
   const text = await response.text();
@@ -774,14 +823,10 @@ async function executeRun(runId, env) {
     });
     await appendEvent(env, runId, "repository_ready", { commitSha });
 
-    await machineCommand(
-      env,
-      runId,
-      machine,
-      dependencyInstallCommand(),
-      600,
-      { label: "Dependency installation", errorCode: "dependencies_failed" },
-    );
+    await machineCommand(env, runId, machine, dependencyInstallCommand(), 600, {
+      label: "Dependency installation",
+      errorCode: "dependencies_failed",
+    });
     await appendEvent(env, runId, "dependencies_ready");
 
     const agent = await runRemoteAgent(env, { ...run, node_name: nodeName });
@@ -801,7 +846,9 @@ async function executeRun(runId, env) {
       updated_at: now(),
     });
     if (testExitCode !== 0) {
-      const detail = redact(tests?.stderr || tests?.stdout || "").trim().slice(-1200);
+      const detail = redact(tests?.stderr || tests?.stdout || "")
+        .trim()
+        .slice(-1200);
       throw Object.assign(new Error(detail ? `Project validation failed: ${detail}` : "Project validation failed"), {
         code: "tests_failed",
         status: 422,
@@ -839,6 +886,7 @@ async function executeRun(runId, env) {
       await removeRunNode(env, runId, nodeName);
       await deleteMachine(env, machine, `nemo-cleanup-${runId}`);
       await updateRun(env, runId, { node_status: "removed", updated_at: now() });
+      if (await deleteChatForRun(env, runId)) await appendEvent(env, runId, "chat_deleted_machine_closed");
       await appendEvent(env, runId, "machine_cleaned");
     }
   } catch (error) {
@@ -866,7 +914,10 @@ async function executeRun(runId, env) {
       try {
         await deleteMachine(env, machine, `nemo-failed-cleanup-${runId}`);
         await appendEvent(env, runId, "machine_cleaned_after_failure");
-        if (!run?.retain_machine) await updateRun(env, runId, { node_status: "removed", updated_at: now() });
+        if (!run?.retain_machine) {
+          await updateRun(env, runId, { node_status: "removed", updated_at: now() });
+          if (await deleteChatForRun(env, runId)) await appendEvent(env, runId, "chat_deleted_machine_closed");
+        }
       } catch {
         await appendEvent(env, runId, "machine_cleanup_failed");
       }
@@ -895,6 +946,104 @@ async function listRuns(request, env) {
   return json({ runs: (result.results || []).map(runPublic) }, 200, request, env);
 }
 
+async function chatResponse(env, chat) {
+  const run = await findRun(env, chat.run_id);
+  return {
+    chat: chatPublic({
+      ...chat,
+      ...(run
+        ? {
+            run_status: run.status,
+            machine_id: run.machine_id,
+            node_name: run.node_name,
+            repository_name: run.repository_name,
+            ref_name: run.ref_name,
+            task: run.task,
+            preview_url: run.preview_url,
+          }
+        : {}),
+    }),
+    run: runPublic(run),
+    messages: await listChatMessages(env, chat.id),
+  };
+}
+
+async function listChats(request, env) {
+  const result = await dbRequired(env)
+    .prepare(
+      "SELECT c.*, r.status AS run_status, r.machine_id, r.node_name, r.repository_name, r.ref_name, r.task, r.preview_url FROM chats c JOIN runs r ON r.id = c.run_id WHERE c.status = 'active' ORDER BY c.updated_at DESC LIMIT 50",
+    )
+    .all();
+  return json({ chats: (result.results || []).map(chatPublic) }, 200, request, env);
+}
+
+async function createChat(request, env, runId) {
+  const run = await findRun(env, runId);
+  if (!run) return errorResponse("run_not_found", 404, request, env, { message: "The requested run does not exist." });
+  const existing = await findChatForRun(env, runId);
+  if (existing) return json(await chatResponse(env, existing), 200, request, env);
+  if (
+    ["cancelled", "cleaned"].includes(run.status) ||
+    (!run.machine_id && ["completed", "failed"].includes(run.status))
+  ) {
+    return errorResponse("chat_unavailable", 409, request, env, {
+      message: "This run's Instabox machine is closed, so its chat is no longer available.",
+    });
+  }
+  const id = `chat_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`;
+  const timestamp = now();
+  const title = `${run.repository_name || "Repository"} · ${run.ref_name || "main"}`;
+  await dbRequired(env)
+    .prepare(
+      "INSERT INTO chats (id, run_id, title, status, created_at, updated_at) VALUES (?1, ?2, ?3, 'active', ?4, ?4)",
+    )
+    .bind(id, runId, title, timestamp)
+    .run();
+  await appendEvent(env, runId, "chat_created", { chatId: id });
+  return json(await chatResponse(env, await findChat(env, id)), 201, request, env);
+}
+
+async function getChat(request, env, chatId) {
+  const chat = await findChat(env, chatId);
+  if (!chat)
+    return errorResponse("chat_not_found", 404, request, env, { message: "The requested chat does not exist." });
+  return json(await chatResponse(env, chat), 200, request, env);
+}
+
+async function sendChatMessage(request, env, chatId) {
+  const chat = await findChat(env, chatId);
+  if (!chat)
+    return errorResponse("chat_not_found", 404, request, env, { message: "The requested chat does not exist." });
+  if (chat.status !== "active")
+    return errorResponse("chat_closed", 409, request, env, { message: "This chat is closed." });
+  if (!chat.machine_id || chat.run_status === "cancelled" || chat.run_status === "cleaned") {
+    return errorResponse("chat_unavailable", 409, request, env, {
+      message: "The run's Instabox machine is not available for chat.",
+    });
+  }
+  const body = await requestJson(request);
+  const content = typeof body?.content === "string" ? body.content.trim() : "";
+  if (content.length < 1 || content.length > 12000) {
+    return errorResponse("invalid_message", 400, request, env, {
+      message: "Message must contain 1 to 12000 characters.",
+    });
+  }
+  const run = await findRun(env, chat.run_id);
+  await appendChatMessage(env, chatId, "user", content);
+  try {
+    const agent = await runRemoteAgent(env, run, { mode: "chat", task: content });
+    await appendChatMessage(env, chatId, "assistant", agent.result, "message", { model: agent.model || null });
+    await appendLog(env, chat.run_id, "agent", agent.result);
+    await appendEvent(env, chat.run_id, "chat_message_completed", { chatId });
+    return json(await chatResponse(env, await findChat(env, chatId)), 200, request, env);
+  } catch (error) {
+    const message = redact(error.message || "The agent could not respond.");
+    await appendChatMessage(env, chatId, "assistant", message, "error", { code: error.code || "agent_failed" });
+    await appendEvent(env, chat.run_id, "chat_message_failed", { chatId, code: error.code || "agent_failed" });
+    return errorResponse(error.code || "agent_failed", error.status || 502, request, env, { message });
+  }
+}
+
 async function getRun(request, env, runId) {
   const run = await findRun(env, runId);
   if (!run) return errorResponse("run_not_found", 404, request, env, { message: "The requested run does not exist." });
@@ -915,7 +1064,7 @@ async function getLogs(request, env, runId) {
   return json({ logs: (result.results || []).reverse() }, 200, request, env);
 }
 
-async function createRun(request, env, ctx) {
+async function createRun(request, env, _ctx) {
   if (!env.NEMO_DB)
     return errorResponse("database_not_configured", 503, request, env, {
       message: "Nemo persistence is not configured.",
@@ -1031,6 +1180,7 @@ async function machineAction(request, env, ctx, runId) {
             updated_at: now(),
             completed_at: now(),
           });
+          if (await deleteChatForRun(env, runId)) await appendEvent(env, runId, "chat_deleted_machine_closed");
         } else {
           const result = await instabox(path, env, {
             method: "POST",
@@ -1108,23 +1258,20 @@ export default {
       if (bridgeCheck === "bridge-live" || bridgeCheck === "bridge-join") {
         const auth = requireAuth(request, env);
         if (auth) return auth;
-        if (!bridgeCredentialsConfigured(env))
-          return errorResponse("gateway_bridge_not_configured", 503, request, env);
+        if (!bridgeCredentialsConfigured(env)) return errorResponse("gateway_bridge_not_configured", 503, request, env);
         try {
           const bridgeResponse = await fetch(
             `${env.NEMO_AGENT_BRIDGE_URL.replace(/\/$/, "")}${bridgeCheck === "bridge-join" ? "/v1/node/join" : "/health"}`,
             {
-            method: bridgeCheck === "bridge-join" ? "POST" : "GET",
-            redirect: "manual",
-            headers: {
-              Accept: "application/json",
-              "CF-Access-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
-              "CF-Access-Client-Secret": env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
-              "X-Nemo-Bridge-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
-            },
-            ...(bridgeCheck === "bridge-join"
-              ? { body: JSON.stringify({ nodeName: "nemo-run-run_probe" }) }
-              : {}),
+              method: bridgeCheck === "bridge-join" ? "POST" : "GET",
+              redirect: "manual",
+              headers: {
+                Accept: "application/json",
+                "CF-Access-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
+                "CF-Access-Client-Secret": env.NEMO_BRIDGE_ACCESS_CLIENT_SECRET,
+                "X-Nemo-Bridge-Client-Id": env.NEMO_BRIDGE_ACCESS_CLIENT_ID,
+              },
+              ...(bridgeCheck === "bridge-join" ? { body: JSON.stringify({ nodeName: "nemo-run-run_probe" }) } : {}),
             },
           );
           const bridgeText = await bridgeResponse.text();
@@ -1189,9 +1336,19 @@ export default {
     if (url.pathname === "/api/runs" && request.method === "GET") return listRuns(request, env);
     if (url.pathname === "/api/runs" && request.method === "POST") return createRun(request, env, ctx);
 
-    const runMatch = /^\/api\/runs\/([^/]+)(?:\/(logs|actions))?$/.exec(url.pathname);
+    if (url.pathname === "/api/chats" && request.method === "GET") return listChats(request, env);
+
+    const chatMatch = /^\/api\/chats\/([^/]+)(?:\/messages)?$/.exec(url.pathname);
+    if (chatMatch) {
+      const chatId = decodeURIComponent(chatMatch[1]);
+      if (url.pathname.endsWith("/messages") && request.method === "POST") return sendChatMessage(request, env, chatId);
+      if (!url.pathname.endsWith("/messages") && request.method === "GET") return getChat(request, env, chatId);
+    }
+
+    const runMatch = /^\/api\/runs\/([^/]+)(?:\/(logs|actions|chat))?$/.exec(url.pathname);
     if (runMatch) {
       const runId = decodeURIComponent(runMatch[1]);
+      if (runMatch[2] === "chat" && request.method === "POST") return createChat(request, env, runId);
       if (!runMatch[2] && request.method === "GET") return getRun(request, env, runId);
       if (runMatch[2] === "logs" && request.method === "GET") return getLogs(request, env, runId);
       if (runMatch[2] === "actions" && request.method === "POST") return machineAction(request, env, ctx, runId);

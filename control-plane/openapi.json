@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Nemo Control Plane API",
-    "version": "2.2.0",
-    "description": "Control-plane contract for Nemo run orchestration, per-run Instabox nodes, durable results, and lifecycle actions."
+    "version": "2.3.0",
+    "description": "Control-plane contract for Nemo run orchestration, per-run Instabox nodes, durable results, lifecycle actions, and run-linked agent chats."
   },
   "servers": [
     {
@@ -108,6 +108,79 @@
         }
       }
     },
+    "/api/runs/{runId}/chat": {
+      "post": {
+        "operationId": "createRunChat",
+        "summary": "Create or reopen the active chat for a run",
+        "security": [{ "NemoBearer": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RunId" }],
+        "responses": {
+          "201": {
+            "description": "Chat created.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatResponse" } } }
+          },
+          "200": {
+            "description": "Existing active chat reopened.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatResponse" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/api/chats": {
+      "get": {
+        "operationId": "listChats",
+        "summary": "List active run-linked agent chats",
+        "security": [{ "NemoBearer": [] }],
+        "responses": {
+          "200": {
+            "description": "Active chats ordered by recent activity.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatListResponse" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/chats/{chatId}": {
+      "get": {
+        "operationId": "getChat",
+        "summary": "Read one run-linked chat and its messages",
+        "security": [{ "NemoBearer": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ChatId" }],
+        "responses": {
+          "200": {
+            "description": "Chat detail.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatResponse" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/chats/{chatId}/messages": {
+      "post": {
+        "operationId": "sendChatMessage",
+        "summary": "Send a follow-up message to the run's agent",
+        "security": [{ "NemoBearer": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ChatId" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatMessageRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent response persisted.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "502": { "$ref": "#/components/responses/ProviderUnavailable" }
+        }
+      }
+    },
     "/health": {
       "get": {
         "operationId": "getHealth",
@@ -193,6 +266,12 @@
         "in": "path",
         "required": true,
         "schema": { "type": "string", "pattern": "^run_[A-Za-z0-9]+$" }
+      },
+      "ChatId": {
+        "name": "chatId",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "pattern": "^chat_[A-Za-z0-9]+$" }
       }
     },
     "securitySchemes": {
@@ -288,6 +367,59 @@
         "type": "object",
         "required": ["run"],
         "properties": { "run": { "$ref": "#/components/schemas/Run" } }
+      },
+      "ChatMessageRequest": {
+        "type": "object",
+        "required": ["content"],
+        "properties": {
+          "content": { "type": "string", "minLength": 1, "maxLength": 12000 }
+        },
+        "additionalProperties": false
+      },
+      "ChatMessage": {
+        "type": "object",
+        "required": ["id", "role", "content", "kind", "createdAt"],
+        "properties": {
+          "id": { "type": "integer" },
+          "role": { "type": "string", "enum": ["user", "assistant", "system"] },
+          "content": { "type": "string" },
+          "kind": { "type": "string", "enum": ["message", "error", "tool"] },
+          "metadata": { "type": ["object", "null"], "additionalProperties": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Chat": {
+        "type": "object",
+        "required": ["id", "runId", "title", "status", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "runId": { "type": "string" },
+          "title": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "closed"] },
+          "runStatus": { "type": ["string", "null"] },
+          "machineId": { "type": ["string", "null"] },
+          "nodeName": { "type": ["string", "null"] },
+          "repositoryName": { "type": ["string", "null"] },
+          "ref": { "type": ["string", "null"] },
+          "task": { "type": ["string", "null"] },
+          "previewUrl": { "type": ["string", "null"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ChatResponse": {
+        "type": "object",
+        "required": ["chat", "messages"],
+        "properties": {
+          "chat": { "$ref": "#/components/schemas/Chat" },
+          "run": { "$ref": "#/components/schemas/Run" },
+          "messages": { "type": "array", "items": { "$ref": "#/components/schemas/ChatMessage" } }
+        }
+      },
+      "ChatListResponse": {
+        "type": "object",
+        "required": ["chats"],
+        "properties": { "chats": { "type": "array", "items": { "$ref": "#/components/schemas/Chat" } } }
       },
       "RunListResponse": {
         "type": "object",

@@ -4,7 +4,7 @@ export const dynamic = "force-static";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://nemo-agent-workbench.pages.dev";
 
-const PUBLIC_ROUTES = ["/", "/dashboard/default"] as const;
+const PUBLIC_ROUTES = ["/", "/dashboard/default", "/chat"] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return PUBLIC_ROUTES.map((route) => ({

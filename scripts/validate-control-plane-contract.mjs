@@ -9,6 +9,10 @@ const requiredPaths = [
   "/api/runs/{runId}",
   "/api/runs/{runId}/logs",
   "/api/runs/{runId}/actions",
+  "/api/runs/{runId}/chat",
+  "/api/chats",
+  "/api/chats/{chatId}",
+  "/api/chats/{chatId}/messages",
   "/api/nodes/provision",
 ];
 const requiredOperations = [
@@ -19,11 +23,15 @@ const requiredOperations = [
   "getRun",
   "getRunLogs",
   "runMachineAction",
+  "createRunChat",
+  "listChats",
+  "getChat",
+  "sendChatMessage",
   "provisionInstaboxNode",
 ];
 
 if (contract.openapi !== "3.1.0") throw new Error("Expected an OpenAPI 3.1 contract.");
-if (contract.info?.version !== "2.2.0") throw new Error("Expected control-plane contract version 2.2.0.");
+if (contract.info?.version !== "2.3.0") throw new Error("Expected control-plane contract version 2.3.0.");
 
 for (const path of requiredPaths) {
   if (!contract.paths?.[path]) throw new Error(`Missing path ${path}.`);
@@ -42,7 +50,6 @@ for (const status of ["401", "502"]) {
   if (!overview.responses?.[status]) throw new Error(`Overview is missing ${status} error response.`);
 }
 
-
 for (const [path, methods] of Object.entries(contract.paths)) {
   if (!path.startsWith("/api/")) continue;
   for (const [method, operation] of Object.entries(methods)) {
@@ -52,4 +59,4 @@ for (const [path, methods] of Object.entries(contract.paths)) {
   }
 }
 
-console.log("Nemo control-plane contract is valid for phases 1-3.");
+console.log("Nemo control-plane contract is valid for phases 1-3 and run-linked chats.");

@@ -16,6 +16,7 @@ import {
   GitBranch,
   LoaderCircle,
   type LucideIcon,
+  MessageCircle,
   Plus,
   RefreshCw,
   Server,
@@ -537,6 +538,12 @@ export function NemoDashboard() {
                       ) : null}
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/chat?run=${encodeURIComponent(run.id)}`}>
+                          <MessageCircle />
+                          Chat
+                        </Link>
+                      </Button>
                       <Button onClick={() => toggleRunLogs(run.id)} size="sm" variant="outline">
                         <SquareTerminal />
                         {expandedRun === run.id ? "Hide logs" : "Logs"}
