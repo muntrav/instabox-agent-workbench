@@ -754,7 +754,7 @@ async function executeRun(runId, env) {
       runId,
       machine,
       `set -eu; cd ${shellQuote(WORKSPACE)}; if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; else echo 'No Node package manifest; dependency install skipped.'; fi`,
-      900,
+      600,
     );
     await appendEvent(env, runId, "dependencies_ready");
 
