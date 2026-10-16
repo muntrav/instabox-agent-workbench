@@ -1,5 +1,7 @@
+import { WorkflowEntrypoint } from "cloudflare:workers";
+
 const INSTABOX_ORIGIN = "https://api.instabox.sh";
-const VERSION = "0.5.0";
+const VERSION = "0.6.0";
 const MIN_CONTROL_TOKEN_LENGTH = 6;
 const MAX_RUNS_PAGE = 50;
 const WORKSPACE = "/data/home/workspace";
@@ -822,6 +824,17 @@ async function executeRun(runId, env) {
   }
 }
 
+export class NemoRunWorkflow extends WorkflowEntrypoint {
+  async run(event, step) {
+    const runId = event?.payload?.runId;
+    if (!validRunId(runId)) throw new Error("Workflow payload is missing a valid run ID");
+    await step.do("execute Nemo run", async () => {
+      await executeRun(runId, this.env);
+      return { runId };
+    });
+  }
+}
+
 async function listRuns(request, env) {
   const url = new URL(request.url);
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 20), 1), MAX_RUNS_PAGE);
@@ -867,6 +880,12 @@ async function createRun(request, env, ctx) {
     });
   }
 
+  if (!env.NEMO_RUN_WORKFLOW?.create) {
+    return errorResponse("workflow_not_configured", 503, request, env, {
+      message: "Durable run execution is not configured.",
+    });
+  }
+
   const idempotencyKey = request.headers.get("Idempotency-Key");
   if (!idempotencyKey || idempotencyKey.length < 12 || idempotencyKey.length > 200) {
     return errorResponse("idempotency_key_required", 400, request, env, {
@@ -907,7 +926,7 @@ async function createRun(request, env, ctx) {
     )
     .run();
   await appendEvent(env, id, "run_queued", { repository: input.repositoryUrl, ref: input.ref });
-  ctx.waitUntil(executeRun(id, env));
+  await env.NEMO_RUN_WORKFLOW.create({ id, params: { runId: id } });
   const run = await findRun(env, id);
   return json({ run: runPublic(run) }, 202, request, env);
 }
@@ -1048,6 +1067,7 @@ export default {
             agentRunner: agentBridgeConfigured(env),
             gatewayBridge: agentBridgeConfigured(env),
             perRunNodeBinding: agentBridgeConfigured(env),
+            durableRunExecution: Boolean(env.NEMO_RUN_WORKFLOW),
             mutations: Boolean(env.NEMO_DB && env.INSTABOX_API_KEY),
           },
         },
