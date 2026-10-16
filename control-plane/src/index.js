@@ -496,7 +496,7 @@ async function provisionNode(request, env) {
     const join = await bridgeRequest(env, "/v1/node/join", { nodeName });
     const joinUrl = join?.joinUrl || join?.url || join?.result?.joinUrl;
     if (typeof joinUrl !== "string") {
-      throw Object.assign(new Error("The Gateway bridge did not return a pairing URL"), {
+      throw Object.assign(new Error(`The Gateway bridge did not return a pairing URL (${Object.keys(join || {}).join(",") || "no response fields"})`), {
         code: "gateway_join_url_missing",
         status: 502,
       });
